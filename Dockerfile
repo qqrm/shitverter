@@ -1,26 +1,22 @@
-# Builder stage
-FROM rust:latest as builder
+# Build Stage
+FROM clux/muslrust:latest as builder
+WORKDIR /home/rust/src
 
-WORKDIR /usr/src/converter-bot
+# Copy the source code and Cargo files
+COPY ./ ./
 
-# Copy the Cargo.toml and Cargo.lock.
-COPY ./Cargo.toml ./Cargo.lock ./
+# Compile the application with musl target
+RUN cargo build --release --target x86_64-unknown-linux-musl
 
-# Copy the source code.
-COPY ./src ./src
+# Run Stage
+FROM alpine:latest as runtime
 
-# Build the application.
-# This will only recompile if the source code has changed.
-RUN cargo build --release
+# Install FFmpeg
+RUN apk add --no-cache ffmpeg
 
-# Runtime stage
-FROM debian:buster-slim
+# Copy the compiled binary from the builder stage
+COPY --from=builder /home/rust/src/target/x86_64-unknown-linux-musl/release/converter-bot /usr/local/bin/converter-bot
 
-# Install FFmpeg.
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-
-# Copy the binary from the builder stage.
-COPY --from=builder /usr/src/converter-bot/target/release/converter-bot /converter-bot
-
-# Set the startup command.
-CMD ["/converter-bot"]
+# Set the working directory and the entrypoint
+WORKDIR /usr/local/bin
+ENTRYPOINT ["./converter-bot"]
