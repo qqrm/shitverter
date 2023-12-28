@@ -2,7 +2,7 @@ use dotenv::dotenv;
 use std::{fs, process::Command};
 use teloxide::{
     prelude::*,
-    types::{InputFile, MediaKind, MessageId, MessageKind},
+    types::{InputFile, MediaKind, MessageKind},
 };
 
 // The main entry point for the async application.
@@ -41,7 +41,7 @@ async fn main() {
         };
 
         // Process the webm file and handle the result.
-        match process_webm(&bot, &document.document.file.id, msg.chat.id, msg.id).await {
+        match process_webm(&bot, &document.document.file.id, &msg).await {
             Ok(_) => {
                 log::info!("Processed webm file")
             }
@@ -69,17 +69,21 @@ async fn main() {
 async fn process_webm(
     bot: &Bot,
     file_id: &str,
-    chat_id: ChatId,
-    message_id: MessageId,
+    msg: &Message,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let file_path = download_file(bot, file_id).await?;
     dbg!(&file_path);
     let converted_file_path = convert_webm_to_mp4(&file_path)?;
     dbg!(&converted_file_path);
 
-    bot.send_video(chat_id, InputFile::file(&converted_file_path))
-        .await?;
-    bot.delete_message(chat_id, message_id).await?;
+    let mut send_video_request = bot.send_video(msg.chat.id, InputFile::file(&converted_file_path));
+
+    if let Some(thread_id) = msg.thread_id {
+        send_video_request = send_video_request.message_thread_id(thread_id);
+    }
+
+    send_video_request.await?;
+    bot.delete_message(msg.chat.id, msg.id).await?;
 
     // Clean up: delete the downloaded and converted files
     fs::remove_file(&file_path)?;
