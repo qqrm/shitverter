@@ -72,9 +72,7 @@ async fn process_webm(
     msg: &Message,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let file_path = download_file(bot, file_id).await?;
-    dbg!(&file_path);
     let converted_file_path = convert_webm_to_mp4(&file_path)?;
-    dbg!(&converted_file_path);
 
     let mut send_video_request = bot.send_video(msg.chat.id, InputFile::file(&converted_file_path));
 
@@ -105,7 +103,6 @@ async fn process_webm(
 async fn download_file(bot: &Bot, file_id: &str) -> Result<String, Box<dyn std::error::Error>> {
     // Get the file from Telegram
     let file = bot.get_file(file_id).send().await?;
-    dbg!(&file);
 
     // Construct the download URL
     let download_url = format!(
@@ -113,7 +110,6 @@ async fn download_file(bot: &Bot, file_id: &str) -> Result<String, Box<dyn std::
         bot.token(),
         file.path
     );
-    dbg!(&download_url);
 
     // Proceed to download the file
     let response = reqwest::get(&download_url).await?;

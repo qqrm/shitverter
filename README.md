@@ -1,7 +1,7 @@
 # Shitverer Bot
 
 ## Introduction
-This bot finds and processes `.webm` files in chats and converts them to `.mp4`.
+This bot waits and processes `.webm` files in chats and converts them to `.mp4`.
 
 ## Requirements
 - Rust
@@ -11,21 +11,18 @@ This bot finds and processes `.webm` files in chats and converts them to `.mp4`.
 ## Installation and Running
 ### Local Setup
 cargo build --release
-./target/release/my_telegram_bot
+./target/release/converter-bot
 
 ### Using Docker
-docker build -t my_telegram_bot .
-docker run my_telegram_bot
+docker build -t converter-bot .
+docker run converter-bot
 
 ## Configuration
 Set the following environment variables:
 - `TELEGRAM_BOT_TOKEN`: Your Telegram Bot Token.
 
 ## Usage
-Send a `.webm` file to the bot, and it will reply with a converted `.mp4` file.
+Send a `.webm` file to the chat with bot, and it will send converted `.mp4` file and delete post with webm.
 
 ## Contributing
 Contributions are welcome. Please send pull requests.
-
-## License
-[Your chosen license]
