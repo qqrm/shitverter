@@ -80,6 +80,14 @@ async fn process_webm(
         send_video_request = send_video_request.message_thread_id(thread_id);
     }
 
+    if let Some(caption) = msg.caption() {
+        send_video_request = send_video_request.caption(caption);
+    }
+
+    if let Some(msg) = msg.reply_to_message() {
+        send_video_request = send_video_request.reply_to_message_id(msg.id);
+    }
+
     send_video_request.await?;
     bot.delete_message(msg.chat.id, msg.id).await?;
 
