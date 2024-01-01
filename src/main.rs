@@ -2,7 +2,7 @@ use dotenv::dotenv;
 use std::{fs, process::Command};
 use teloxide::{
     prelude::*,
-    types::{InputFile, MediaKind, MessageKind},
+    types::{InputFile, MediaKind, MessageKind, ParseMode},
 };
 
 // The main entry point for the async application.
@@ -80,15 +80,23 @@ async fn process_webm(
         send_video_request = send_video_request.message_thread_id(thread_id);
     }
 
-    if let Some(caption) = msg.caption() {
-        send_video_request = send_video_request.caption(caption);
+    if let Some(user) = msg.from() {
+        let full_name = user.full_name();
+        let signature = format!("send by [{}](tg://user?id={})", full_name, user.id);
+    
+        let caption = msg.caption().map_or_else(
+            || signature.clone(),
+            |existing_caption| format!("{}\n\n{}", existing_caption, signature),
+        );
+    
+        send_video_request = send_video_request.caption(caption).allow_sending_without_reply(true);
     }
 
     if let Some(msg) = msg.reply_to_message() {
         send_video_request = send_video_request.reply_to_message_id(msg.id);
     }
 
-    send_video_request.await?;
+    send_video_request.parse_mode(ParseMode::MarkdownV2).await?;
     bot.delete_message(msg.chat.id, msg.id).await?;
 
     // Clean up: delete the downloaded and converted files
