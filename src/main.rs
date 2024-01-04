@@ -75,6 +75,7 @@ async fn process_webm(
     let converted_file_path = convert_webm_to_mp4(&file_path)?;
 
     let mut send_video_request = bot.send_video(msg.chat.id, InputFile::file(&converted_file_path));
+    send_video_request = send_video_request.disable_notification(true);
 
     if let Some(thread_id) = msg.thread_id {
         send_video_request = send_video_request.message_thread_id(thread_id);
@@ -92,10 +93,10 @@ async fn process_webm(
         send_video_request = send_video_request.caption(caption).allow_sending_without_reply(true);
     }
 
+
     if let Some(msg) = msg.reply_to_message() {
         send_video_request = send_video_request.reply_to_message_id(msg.id);
     }
-
     send_video_request.parse_mode(ParseMode::MarkdownV2).await?;
     bot.delete_message(msg.chat.id, msg.id).await?;
 
