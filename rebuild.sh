@@ -17,5 +17,4 @@ docker rm my_shitverter_container || true
 docker build -t shitverter:latest .
 
 # Run the new container here
-docker run -d -e TELEGRAM_API_TOKEN=$TELEGRAM_API_TOKEN --name my_shitverter_container shitverter:latest
-
+docker run -d -e TELOXIDE_TOKEN=$TELEGRAM_API_TOKEN --name my_shitverter_container shitverter:latest
