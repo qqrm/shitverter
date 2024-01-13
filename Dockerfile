@@ -1,15 +1,26 @@
 # Build Stage
-FROM clux/muslrust:latest as builder
+FROM clux/muslrust:1.75.0-stable as builder
 WORKDIR /home/rust/src
 
-# Copy the source code and Cargo files
+# Cache dependencies
+# Copy Cargo.toml and Cargo.lock and create a dummy main file
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Build only the dependencies to cache them
+RUN cargo build --release --target x86_64-unknown-linux-musl
+
+# Now copy the actual source code
 COPY ./ ./
 
-# Compile the application with musl target
+# Touch the main file to update its timestamp
+RUN touch src/main.rs
+
+# Build the actual application
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Run Stage
-FROM alpine:latest as runtime
+FROM alpine:3.19 as runtime
 
 # Install FFmpeg
 RUN apk add --no-cache ffmpeg
