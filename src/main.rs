@@ -1,13 +1,52 @@
+
 use dotenv::dotenv;
-use std::{fs, process::Command};
+use std::{
+    fs,
+    sync::{Arc, RwLock},
+};
 use teloxide::{
     prelude::*,
     types::{InputFile, MediaKind, MessageKind, ParseMode},
+    utils::command,
 };
+use teloxide::{prelude::*, utils::command::BotCommands};
+use tokio::sync::{Mutex, OnceCell};
+
+mod leetcode;
+
+async fn send_daily_message(bot: Bot, chat_id: ChatId) {
+    bot.send_message(chat_id, "Your daily message!")
+        .await
+        .unwrap();
+}
+
+// async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
+//     match cmd {
+//         Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?,
+
+//     };
+
+//     Ok(())
+// }
+
+
+
+
+
+
+#[derive(BotCommands, Clone)]
+#[command(
+    rename_rule = "lowercase",
+    description = "These commands are supported:"
+)]
+enum Command {
+    #[command(description = "Subscribe to Leetcode Daily Challenge.")]
+    Subscribe,
+}
 
 // The main entry point for the async application.
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from a `.env` file, if it exists.
     dotenv().ok();
 
@@ -17,6 +56,8 @@ async fn main() {
 
     // Initialize the bot with the token from environment variables.
     let bot = Bot::from_env();
+
+    leetcode::process_leetcode_subs(&bot);
 
     // Start the bot and handle incoming messages.
     teloxide::repl(bot, |bot: Bot, msg: Message| async move {
@@ -33,7 +74,10 @@ async fn main() {
         respond(())
     })
     .await;
+
+    Ok(())
 }
+
 
 /// Processes the joining of a new member and sends a message with their IDs.
 ///
@@ -53,21 +97,22 @@ async fn process_new_member(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std:
 
     // Build resp with ID's
     let resp_with_ids: String = new_members_msg
-    .new_chat_members
-    .iter()
-    .map(|user| {
-        format!(
-            "Check ASAP [{}](tg://user?id={}) with id {}\n",
-            user.full_name(),
-            user.id,
-            user.id
-        )
-    })
-    .collect();
+        .new_chat_members
+        .iter()
+        .map(|user| {
+            format!(
+                "Check ASAP [{}](tg://user?id={}) with id {}\n",
+                user.full_name(),
+                user.id,
+                user.id
+            )
+        })
+        .collect();
 
     // Send response
     bot.send_message(msg.chat.id, resp_with_ids)
-    .parse_mode(ParseMode::MarkdownV2).await?;
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
 
     Ok(())
 }
@@ -183,7 +228,7 @@ async fn download_file(bot: &Bot, file_id: &str) -> Result<String, Box<dyn std::
 fn convert_webm_to_mp4(file_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     // Use FFmpeg to convert the file and return the new file path
     let output_path = format!("{}.mp4", file_path);
-    Command::new("ffmpeg")
+    std::process::Command::new("ffmpeg")
         .args(["-i", file_path, &output_path])
         .output()?;
     Ok(output_path)

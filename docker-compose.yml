@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  bot:
+    build: .
+    environment:
+      - TELOXIDE_TOKEN=${TELEGRAM_API_TOKEN}
+    volumes:
+      - bot_data:/home/data
+    command: ./converter-bot
+
+volumes:
+  bot_data:
