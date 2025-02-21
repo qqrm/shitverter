@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Result as AnyResult};
 use dotenv::dotenv;
 use std::process::Command;
 use teloxide::{
@@ -9,7 +9,7 @@ use tokio::fs;
 use tokio::task;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> AnyResult<()> {
     dotenv().ok();
     pretty_env_logger::init();
     log::info!("Starting bot");
@@ -30,14 +30,12 @@ async fn main() -> Result<()> {
 }
 
 /// Обрабатывает присоединение нового участника и отправляет сообщение с его данными.
-async fn process_new_member(bot: &Bot, msg: &Message) -> Result<()> {
+async fn process_new_member(bot: &Bot, msg: &Message) -> AnyResult<()> {
     if let MessageKind::NewChatMembers(new_members_msg) = &msg.kind {
         let resp_with_ids: String = new_members_msg
             .new_chat_members
             .iter()
             .map(|user| {
-                // Экранирование специальных символов в имени пользователя может потребоваться,
-                // если имя содержит символы, значимые для MarkdownV2.
                 format!(
                     "Check ASAP [{}](tg://user?id={}) with id {}\n",
                     user.full_name(),
@@ -55,7 +53,7 @@ async fn process_new_member(bot: &Bot, msg: &Message) -> Result<()> {
 }
 
 /// Обрабатывает сообщение с файлом `.webm`, конвертируя его в `.mp4` и отправляя обратно в чат.
-async fn process_webm(bot: &Bot, msg: &Message) -> Result<()> {
+async fn process_webm(bot: &Bot, msg: &Message) -> AnyResult<()> {
     let MessageKind::Common(common) = &msg.kind else {
         return Ok(());
     };
@@ -72,8 +70,8 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<()> {
 
     // Скачиваем файл.
     let file_path = download_file(bot, &document.document.file.id).await?;
-
-    // Конвертация файла выполняется в отдельном блокирующем потоке с явным преобразованием ошибок.
+    
+    // Конвертация файла выполняется в отдельном блокирующем потоке.
     let join_result = task::spawn_blocking(move || convert_webm_to_mp4(&file_path))
         .await
         .context("Failed to join blocking task")?;
@@ -91,12 +89,10 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<()> {
     if let Some(user) = msg.from() {
         let full_name = user.full_name();
         let signature = format!("send by [{}](tg://user?id={})", full_name, user.id);
-
         let caption = msg.caption().map_or_else(
             || signature.clone(),
             |existing_caption| format!("{}\n\n{}", existing_caption, signature),
         );
-
         send_video_request = send_video_request
             .caption(caption)
             .allow_sending_without_reply(true);
@@ -123,7 +119,7 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<()> {
 }
 
 /// Скачивает файл с серверов Telegram по его идентификатору.
-async fn download_file(bot: &Bot, file_id: &str) -> Result<String> {
+async fn download_file(bot: &Bot, file_id: &str) -> AnyResult<String> {
     let file = bot.get_file(file_id).send().await?;
     let download_url = format!(
         "https://api.telegram.org/file/bot{}/{}",
@@ -138,15 +134,13 @@ async fn download_file(bot: &Bot, file_id: &str) -> Result<String> {
 }
 
 /// Конвертирует файл `.webm` в формат `.mp4` с помощью FFmpeg.
-fn convert_webm_to_mp4(file_path: &str) -> Result<String> {
+fn convert_webm_to_mp4(file_path: &str) -> AnyResult<String> {
     let output_path = format!("{}.mp4", file_path);
     let output = Command::new("ffmpeg")
         .args(["-i", file_path, &output_path])
         .output()?;
-
     if !output.status.success() {
         return Err(anyhow!("FFmpeg conversion failed: {:?}", output));
     }
-
     Ok(output_path)
 }
