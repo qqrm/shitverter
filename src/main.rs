@@ -87,13 +87,19 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std::error
         return Ok(());
     };
 
-    // Скачивание файла
+    // Скачиваем файл.
     let file_path = download_file(bot, &document.document.file.id).await?;
-    // Конвертация файла выполняется в отдельном блокирующем потоке
-    let converted_file_path = task::spawn_blocking(move || convert_webm_to_mp4(&file_path))
-        .await??;
     
-    let mut send_video_request = bot.send_video(msg.chat.id, InputFile::file(&converted_file_path))
+    // Конвертация файла выполняется в отдельном блокирующем потоке с явным преобразованием ошибок.
+    let join_result = task::spawn_blocking(move || convert_webm_to_mp4(&file_path))
+        .await
+        .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+    let converted_file_path = join_result
+        .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+    
+    // Формируем запрос на отправку видео.
+    let mut send_video_request = bot
+        .send_video(msg.chat.id, InputFile::file(&converted_file_path))
         .disable_notification(true);
 
     if let Some(thread_id) = msg.thread_id {
@@ -117,14 +123,13 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std::error
     if let Some(reply_msg) = msg.reply_to_message() {
         send_video_request = send_video_request.reply_to_message_id(reply_msg.id);
     }
-
     send_video_request = send_video_request.parse_mode(ParseMode::MarkdownV2);
     send_video_request.await?;
 
-    // Удаляем оригинальное сообщение
+    // Удаляем оригинальное сообщение.
     bot.delete_message(msg.chat.id, msg.id).await?;
 
-    // Асинхронное удаление временных файлов с логированием ошибок
+    // Асинхронное удаление временных файлов с логированием ошибок.
     if let Err(e) = fs::remove_file(&file_path).await {
         log::error!("Error deleting file {}: {:?}", file_path, e);
     }
@@ -154,7 +159,6 @@ async fn download_file(bot: &Bot, file_id: &str) -> Result<String, Box<dyn std::
     );
     let response = reqwest::get(&download_url).await?;
     let file_path = format!("/tmp/{}.webm", file_id);
-
     let content = response.bytes().await?;
     fs::write(&file_path, &content).await?;
     Ok(file_path)
