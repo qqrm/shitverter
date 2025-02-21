@@ -52,7 +52,6 @@ async fn process_new_member(bot: &Bot, msg: &Message) -> AnyResult<()> {
     Ok(())
 }
 
-/// Обрабатывает сообщение с файлом `.webm`, конвертируя его в `.mp4` и отправляя обратно в чат.
 async fn process_webm(bot: &Bot, msg: &Message) -> AnyResult<()> {
     let MessageKind::Common(common) = &msg.kind else {
         return Ok(());
@@ -70,9 +69,12 @@ async fn process_webm(bot: &Bot, msg: &Message) -> AnyResult<()> {
 
     // Скачиваем файл.
     let file_path = download_file(bot, &document.document.file.id).await?;
-    
+
+    // Клонируем file_path для передачи в замыкание, чтобы оригинал оставался доступен
+    let file_path_clone = file_path.clone();
+
     // Конвертация файла выполняется в отдельном блокирующем потоке.
-    let join_result = task::spawn_blocking(move || convert_webm_to_mp4(&file_path))
+    let join_result = task::spawn_blocking(move || convert_webm_to_mp4(&file_path_clone))
         .await
         .context("Failed to join blocking task")?;
     let converted_file_path = join_result.context("FFmpeg conversion failed")?;
