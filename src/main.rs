@@ -91,8 +91,7 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std::error
     let file_path = download_file(bot, &document.document.file.id).await?;
     // Конвертация файла выполняется в отдельном блокирующем потоке
     let converted_file_path = task::spawn_blocking(move || convert_webm_to_mp4(&file_path))
-        .await??
-        ;
+        .await??;
     
     let mut send_video_request = bot.send_video(msg.chat.id, InputFile::file(&converted_file_path))
         .disable_notification(true);
@@ -170,7 +169,7 @@ async fn download_file(bot: &Bot, file_id: &str) -> Result<String, Box<dyn std::
 /// # Возвращаемое значение
 ///
 /// Возвращает `Result` с путем к сконвертированному файлу или ошибку.
-fn convert_webm_to_mp4(file_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn convert_webm_to_mp4(file_path: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let output_path = format!("{}.mp4", file_path);
     let output = Command::new("ffmpeg")
         .args(["-i", file_path, &output_path])
