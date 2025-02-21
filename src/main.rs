@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context, Result};
 use dotenv::dotenv;
 use std::process::Command;
 use teloxide::{
@@ -7,9 +8,8 @@ use teloxide::{
 use tokio::fs;
 use tokio::task;
 
-/// Основная точка входа для асинхронного приложения бота.
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     dotenv().ok();
     pretty_env_logger::init();
     log::info!("Starting bot");
@@ -26,19 +26,11 @@ async fn main() {
         respond(())
     })
     .await;
+    Ok(())
 }
 
 /// Обрабатывает присоединение нового участника и отправляет сообщение с его данными.
-///
-/// # Аргументы
-///
-/// * `bot` - Ссылка на экземпляр Telegram бота.
-/// * `msg` - Входящее сообщение Telegram.
-///
-/// # Возвращаемое значение
-///
-/// Возвращает `Ok(())` при успешной обработке или ошибку в случае неудачи.
-async fn process_new_member(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std::error::Error>> {
+async fn process_new_member(bot: &Bot, msg: &Message) -> Result<()> {
     if let MessageKind::NewChatMembers(new_members_msg) = &msg.kind {
         let resp_with_ids: String = new_members_msg
             .new_chat_members
@@ -63,16 +55,7 @@ async fn process_new_member(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std:
 }
 
 /// Обрабатывает сообщение с файлом `.webm`, конвертируя его в `.mp4` и отправляя обратно в чат.
-///
-/// # Аргументы
-///
-/// * `bot` - Ссылка на экземпляр Telegram бота.
-/// * `msg` - Сообщение, содержащее документ с видео.
-///
-/// # Возвращаемое значение
-///
-/// Возвращает `Ok(())` при успешной обработке или ошибку в случае неудачи.
-async fn process_webm(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std::error::Error>> {
+async fn process_webm(bot: &Bot, msg: &Message) -> Result<()> {
     let MessageKind::Common(common) = &msg.kind else {
         return Ok(());
     };
@@ -89,13 +72,12 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std::error
 
     // Скачиваем файл.
     let file_path = download_file(bot, &document.document.file.id).await?;
-    
+
     // Конвертация файла выполняется в отдельном блокирующем потоке с явным преобразованием ошибок.
     let join_result = task::spawn_blocking(move || convert_webm_to_mp4(&file_path))
         .await
-        .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
-    let converted_file_path = join_result
-        .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+        .context("Failed to join blocking task")?;
+    let converted_file_path = join_result.context("FFmpeg conversion failed")?;
     
     // Формируем запрос на отправку видео.
     let mut send_video_request = bot
@@ -141,16 +123,7 @@ async fn process_webm(bot: &Bot, msg: &Message) -> Result<(), Box<dyn std::error
 }
 
 /// Скачивает файл с серверов Telegram по его идентификатору.
-///
-/// # Аргументы
-///
-/// * `bot` - Ссылка на экземпляр Telegram бота.
-/// * `file_id` - Идентификатор файла для скачивания.
-///
-/// # Возвращаемое значение
-///
-/// Возвращает `Result` с путем к скачанному файлу или ошибку.
-async fn download_file(bot: &Bot, file_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+async fn download_file(bot: &Bot, file_id: &str) -> Result<String> {
     let file = bot.get_file(file_id).send().await?;
     let download_url = format!(
         "https://api.telegram.org/file/bot{}/{}",
@@ -165,22 +138,14 @@ async fn download_file(bot: &Bot, file_id: &str) -> Result<String, Box<dyn std::
 }
 
 /// Конвертирует файл `.webm` в формат `.mp4` с помощью FFmpeg.
-///
-/// # Аргументы
-///
-/// * `file_path` - Путь к исходному файлу `.webm`.
-///
-/// # Возвращаемое значение
-///
-/// Возвращает `Result` с путем к сконвертированному файлу или ошибку.
-fn convert_webm_to_mp4(file_path: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+fn convert_webm_to_mp4(file_path: &str) -> Result<String> {
     let output_path = format!("{}.mp4", file_path);
     let output = Command::new("ffmpeg")
         .args(["-i", file_path, &output_path])
         .output()?;
 
     if !output.status.success() {
-        return Err(format!("FFmpeg conversion failed: {:?}", output).into());
+        return Err(anyhow!("FFmpeg conversion failed: {:?}", output));
     }
 
     Ok(output_path)
