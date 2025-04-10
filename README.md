@@ -1,4 +1,4 @@
-# Shitverer Bot
+# Shitverter Bot
 
 ## Introduction
 This bot waits and processes `.webm` files in chats and converts them to `.mp4`.
