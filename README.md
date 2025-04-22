@@ -7,15 +7,33 @@ This bot waits and processes `.webm` files in chats and converts them to `.mp4`.
 - Rust
 - FFmpeg
 - Docker (optional)
+- [Just](https://github.com/casey/just) (command runner)
 
 ## Installation and Running
-### Local Setup
+
+### Using Just (recommended)
+```bash
+# Show available commands
+just
+
+# Rebuild the project from scratch and run in docker
+just rebuild
+
+# Just run the container (without rebuilding)
+just run
+```
+
+### Local Setup (alternative)
+```bash
 cargo build --release
 ./target/release/converter-bot
+```
 
-### Using Docker
-docker build -t converter-bot .
-docker run converter-bot
+### Using Docker directly (alternative)
+```bash
+docker build -t shitverter .
+docker run -d -e TELOXIDE_TOKEN=$TELEGRAM_API_TOKEN --name my_shitverter_container shitverter:latest
+```
 
 ## Configuration
 Set the following environment variables:
