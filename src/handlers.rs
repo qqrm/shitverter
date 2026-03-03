@@ -8,23 +8,74 @@ use tokio::{fs, task};
 use crate::converter::convert_video_to_mp4;
 use crate::telegram::download_file;
 
+const VIDEO_FILE_EXTENSIONS: &[&str] = &[
+    "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "ts", "webm",
+    "wmv",
+];
+
+fn has_video_extension(file_name: &str) -> bool {
+    file_name
+        .rsplit_once('.')
+        .map(|(_, ext)| VIDEO_FILE_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+fn is_video_document(mime_type: Option<&str>, file_name: Option<&str>) -> bool {
+    if mime_type
+        .map(|mime| mime.starts_with("video/"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    file_name.map(has_video_extension).unwrap_or(false)
+}
+
 pub async fn process_video(bot: &Bot, msg: &Message) -> AnyResult<()> {
     let MessageKind::Common(common) = &msg.kind else {
         return Ok(());
     };
-    let MediaKind::Document(document) = &common.media_kind else {
-        return Ok(());
-    };
-    let Some(mime_type) = &document.document.mime_type else {
-        return Ok(());
-    };
 
-    if !mime_type.essence_str().starts_with("video/") {
-        return Ok(());
+    let file_id = match &common.media_kind {
+        MediaKind::Video(video) => {
+            log::info!(
+                "Incoming video message: chat_id={}, message_id={}, mime={:?}, file_name={:?}, file_id={}",
+                msg.chat.id,
+                msg.id,
+                video.video.mime_type,
+                video.video.file_name,
+                video.video.file.id
+            );
+            video.video.file.id.to_string()
+        }
+        MediaKind::Document(document) => {
+            let mime_type = document
+                .document
+                .mime_type
+                .as_ref()
+                .map(|mime| mime.essence_str());
+            let file_name = document.document.file_name.as_deref();
+
+            log::info!(
+                "Incoming document message: chat_id={}, message_id={}, mime={:?}, file_name={:?}, file_id={}",
+                msg.chat.id,
+                msg.id,
+                mime_type,
+                file_name,
+                document.document.file.id
+            );
+
+            if !is_video_document(mime_type, file_name) {
+                return Ok(());
+            }
+
+            document.document.file.id.to_string()
+        }
+        _ => return Ok(()),
     };
 
     // Скачиваем файл.
-    let file_path = download_file(bot, &document.document.file.id).await?;
+    let file_path = download_file(bot, &file_id).await?;
 
     // Клонируем file_path для передачи в замыкание, чтобы оригинал оставался доступен
     let file_path_clone = file_path.clone();
@@ -74,4 +125,33 @@ pub async fn process_video(bot: &Bot, msg: &Message) -> AnyResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_video_document;
+
+    #[test]
+    fn detects_video_mime_type() {
+        assert!(is_video_document(
+            Some("video/x-matroska"),
+            Some("source.bin")
+        ));
+    }
+
+    #[test]
+    fn detects_video_extension_without_video_mime() {
+        assert!(is_video_document(
+            Some("application/octet-stream"),
+            Some("source.MKV"),
+        ));
+    }
+
+    #[test]
+    fn skips_non_video_documents() {
+        assert!(!is_video_document(
+            Some("application/pdf"),
+            Some("document.pdf")
+        ));
+    }
 }
