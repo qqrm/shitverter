@@ -1,7 +1,7 @@
 # Shitverter Bot
 
 ## Introduction
-This bot waits and processes `.webm` files in chats and converts them to `.mp4`.
+This bot waits for video files in chats and converts them to `.mp4` using FFmpeg.
 
 ## Requirements
 - Rust
@@ -40,7 +40,7 @@ Set the following environment variables:
 - `TELOXIDE_TOKEN`: Your Telegram Bot Token.
 
 ## Usage
-Send a `.webm` file to the chat with bot, and it will send converted `.mp4` file and delete post with webm.
+Send a video file (for example, `.webm`, `.mkv`, `.mov`) to the chat with the bot, and it will send a converted `.mp4` file and delete the original message.
 Also shows tg ID's of new members.
 
 ## Contributing
