@@ -66,7 +66,9 @@ async fn start_quota_monitor(limiter: Arc<Mutex<RateLimiter>>) {
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     dotenv().ok();
-    pretty_env_logger::init();
+    pretty_env_logger::formatted_timed_builder()
+        .parse_filters(&std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
+        .init();
     log::info!("Starting bot");
 
     let user_daily_limit = parse_env_limit("USER_DAILY_LIMIT", DEFAULT_USER_DAILY_LIMIT);
