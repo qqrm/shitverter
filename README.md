@@ -43,5 +43,11 @@ Set the following environment variables:
 Send a video file (for example, `.webm`, `.mkv`, `.mov`) to the chat with the bot, and it will send a converted `.mp4` file and delete the original message.
 Also shows tg ID's of new members.
 
+## Rate limits
+- `USER_DAILY_LIMIT` (default: `10`) — maximum conversions per user per UTC day.
+- `GLOBAL_DAILY_LIMIT` (default: `50`) — maximum conversions for the whole bot per UTC day.
+
+The bot logs quota decisions and resets counters at UTC midnight.
+
 ## Contributing
 Contributions are welcome. Please send pull requests.

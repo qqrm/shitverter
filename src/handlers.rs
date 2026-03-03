@@ -3,9 +3,10 @@ use teloxide::{
     prelude::*,
     types::{InputFile, MediaKind, MessageKind, ParseMode},
 };
-use tokio::{fs, task};
+use tokio::{fs, sync::Mutex, task};
 
 use crate::converter::convert_video_to_mp4;
+use crate::limits::{utc_day_index, QuotaDecision, RateLimiter};
 use crate::telegram::download_file;
 
 const VIDEO_FILE_EXTENSIONS: &[&str] = &[
@@ -30,7 +31,40 @@ fn is_video_document(mime_type: Option<&str>, file_name: Option<&str>) -> bool {
     file_name.map(has_video_extension).unwrap_or(false)
 }
 
-pub async fn process_video(bot: &Bot, msg: &Message) -> AnyResult<()> {
+fn sanitize_user_name(name: Option<&str>) -> String {
+    let Some(name) = name else {
+        return "unknown".to_string();
+    };
+
+    if name.chars().all(|ch| {
+        ch.is_ascii_alphanumeric()
+            || ch.is_ascii_whitespace()
+            || ('А'..='я').contains(&ch)
+            || matches!(ch, 'Ё' | 'ё' | '_' | '-' | '.' | ' ')
+    }) {
+        name.to_string()
+    } else {
+        "eblan with symbols".to_string()
+    }
+}
+
+pub async fn process_video(
+    bot: &Bot,
+    msg: &Message,
+    limiter: &Mutex<RateLimiter>,
+) -> AnyResult<()> {
+    let user = msg.from();
+    let user_id = user.map_or(0, |u| u.id.0 as i64);
+    let user_name = sanitize_user_name(user.map(|u| u.full_name()).as_deref());
+
+    log::info!(
+        "Incoming message: chat_id={}, message_id={}, user_id={}, user_name='{}'",
+        msg.chat.id,
+        msg.id,
+        user_id,
+        user_name,
+    );
+
     let MessageKind::Common(common) = &msg.kind else {
         return Ok(());
     };
@@ -72,6 +106,76 @@ pub async fn process_video(bot: &Bot, msg: &Message) -> AnyResult<()> {
         }
         _ => return Ok(()),
     };
+
+    let quota_decision = {
+        let mut limiter = limiter.lock().await;
+        limiter.check_and_consume(user_id, utc_day_index(std::time::SystemTime::now()))
+    };
+
+    match quota_decision {
+        QuotaDecision::Allowed {
+            user_count,
+            user_limit,
+            global_count,
+            global_limit,
+            day_index,
+        } => {
+            log::info!(
+                "Quota allowed: day={}, user_id={}, user_count={}/{}, global_count={}/{}",
+                day_index,
+                user_id,
+                user_count,
+                user_limit,
+                global_count,
+                global_limit,
+            );
+        }
+        QuotaDecision::UserLimitExceeded {
+            user_count,
+            user_limit,
+            global_count,
+            global_limit,
+            day_index,
+        } => {
+            log::warn!(
+                "User daily limit exceeded: day={}, user_id={}, user_count={}/{}, global_count={}/{}",
+                day_index,
+                user_id,
+                user_count,
+                user_limit,
+                global_count,
+                global_limit,
+            );
+            bot.send_message(
+                msg.chat.id,
+                format!(
+                    "Daily limit exceeded: {}/{} videos for today. Try again tomorrow (UTC).",
+                    user_count, user_limit
+                ),
+            )
+            .await?;
+            return Ok(());
+        }
+        QuotaDecision::GlobalLimitExceeded {
+            global_count,
+            global_limit,
+            day_index,
+        } => {
+            log::warn!(
+                "Global daily limit exceeded: day={}, user_id={}, global_count={}/{}",
+                day_index,
+                user_id,
+                global_count,
+                global_limit,
+            );
+            bot.send_message(
+                msg.chat.id,
+                "Service daily conversion limit is exhausted. Please try again tomorrow (UTC).",
+            )
+            .await?;
+            return Ok(());
+        }
+    }
 
     // Скачиваем файл.
     let file_path = download_file(bot, &file_id).await?;
@@ -138,7 +242,7 @@ pub async fn process_video(bot: &Bot, msg: &Message) -> AnyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_video_document;
+    use super::{is_video_document, sanitize_user_name};
 
     #[test]
     fn detects_video_mime_type() {
@@ -162,5 +266,15 @@ mod tests {
             Some("application/pdf"),
             Some("document.pdf")
         ));
+    }
+
+    #[test]
+    fn keeps_safe_name() {
+        assert_eq!(sanitize_user_name(Some("Иван Ivan_01")), "Иван Ivan_01");
+    }
+
+    #[test]
+    fn replaces_unsafe_name() {
+        assert_eq!(sanitize_user_name(Some("bad🚀name")), "eblan with symbols");
     }
 }
