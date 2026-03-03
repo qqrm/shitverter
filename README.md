@@ -23,6 +23,15 @@ just rebuild
 just run
 ```
 
+### Using helper scripts
+```bash
+# Rebuild image + run container
+./rebuild.sh
+
+# Run existing image
+./run.sh
+```
+
 ### Local Setup (alternative)
 ```bash
 cargo build --release
@@ -32,12 +41,15 @@ cargo build --release
 ### Using Docker directly (alternative)
 ```bash
 docker build -t shitverter .
-docker run -d -e TELOXIDE_TOKEN=$TELEGRAM_API_TOKEN --name my_shitverter_container shitverter:latest
+docker run -d --env-file .env --name my_shitverter_container shitverter:latest
 ```
 
 ## Configuration
 Set the following environment variables:
 - `TELOXIDE_TOKEN`: Your Telegram Bot Token.
+
+If a local `.env` file exists, `run.sh` and `rebuild.sh` automatically pass it to
+`docker run` using `--env-file .env`.
 
 ## Usage
 Send a video file (for example, `.webm`, `.mkv`, `.mov`) to the chat with the bot, and it will send a converted `.mp4` file and delete the original message.
