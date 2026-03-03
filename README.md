@@ -47,6 +47,7 @@ docker run -d --env-file .env --name my_shitverter_container shitverter:latest
 ## Configuration
 Set the following environment variables:
 - `TELOXIDE_TOKEN`: Your Telegram Bot Token.
+- `RUST_LOG`: Log level filter for the bot output (example: `RUST_LOG=info`, default: `info`).
 
 If a local `.env` file exists, `run.sh` and `rebuild.sh` automatically pass it to
 `docker run` using `--env-file .env`.
