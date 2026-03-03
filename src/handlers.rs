@@ -5,10 +5,10 @@ use teloxide::{
 };
 use tokio::{fs, task};
 
+use crate::converter::convert_video_to_mp4;
 use crate::telegram::download_file;
-use crate::converter::convert_webm_to_mp4;
 
-pub async fn process_webm(bot: &Bot, msg: &Message) -> AnyResult<()> {
+pub async fn process_video(bot: &Bot, msg: &Message) -> AnyResult<()> {
     let MessageKind::Common(common) = &msg.kind else {
         return Ok(());
     };
@@ -19,7 +19,7 @@ pub async fn process_webm(bot: &Bot, msg: &Message) -> AnyResult<()> {
         return Ok(());
     };
 
-    if mime_type.essence_str() != "video/webm" {
+    if !mime_type.essence_str().starts_with("video/") {
         return Ok(());
     };
 
@@ -30,11 +30,11 @@ pub async fn process_webm(bot: &Bot, msg: &Message) -> AnyResult<()> {
     let file_path_clone = file_path.clone();
 
     // Конвертация файла выполняется в отдельном блокирующем потоке.
-    let join_result = task::spawn_blocking(move || convert_webm_to_mp4(&file_path_clone))
+    let join_result = task::spawn_blocking(move || convert_video_to_mp4(&file_path_clone))
         .await
         .context("Failed to join blocking task")?;
     let converted_file_path = join_result.context("FFmpeg conversion failed")?;
-    
+
     // Формируем запрос на отправку видео.
     let mut send_video_request = bot
         .send_video(msg.chat.id, InputFile::file(&converted_file_path))
@@ -74,4 +74,4 @@ pub async fn process_webm(bot: &Bot, msg: &Message) -> AnyResult<()> {
     }
 
     Ok(())
-} 
+}
