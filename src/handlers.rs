@@ -38,7 +38,7 @@ fn sanitize_user_name(name: Option<&str>) -> String {
 
     if name.chars().all(|ch| {
         ch.is_ascii_alphanumeric()
-            || ch.is_ascii_whitespace()
+            || ch == ' '
             || ('А'..='я').contains(&ch)
             || matches!(ch, 'Ё' | 'ё' | '_' | '-' | '.' | ' ')
     }) {
@@ -48,13 +48,27 @@ fn sanitize_user_name(name: Option<&str>) -> String {
     }
 }
 
+fn quota_subject_key(msg: &Message) -> i64 {
+    if let Some(user) = msg.from() {
+        return user.id.0 as i64;
+    }
+
+    // For channel/anonymous messages without `from`, avoid a shared bucket (0)
+    // by assigning a synthetic per-message key scoped by chat + message id.
+    synthetic_quota_key(msg.chat.id.0, i64::from(msg.id.0))
+}
+
+fn synthetic_quota_key(chat_id: i64, message_id: i64) -> i64 {
+    chat_id.wrapping_mul(1_000_003).wrapping_add(message_id) ^ i64::MIN
+}
+
 pub async fn process_video(
     bot: &Bot,
     msg: &Message,
     limiter: &Mutex<RateLimiter>,
 ) -> AnyResult<()> {
     let user = msg.from();
-    let user_id = user.map_or(0, |u| u.id.0 as i64);
+    let user_id = quota_subject_key(msg);
     let user_name = sanitize_user_name(user.map(|u| u.full_name()).as_deref());
 
     log::info!(
@@ -242,7 +256,7 @@ pub async fn process_video(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_video_document, sanitize_user_name};
+    use super::{is_video_document, sanitize_user_name, synthetic_quota_key};
 
     #[test]
     fn detects_video_mime_type() {
@@ -276,5 +290,22 @@ mod tests {
     #[test]
     fn replaces_unsafe_name() {
         assert_eq!(sanitize_user_name(Some("bad🚀name")), "eblan with symbols");
+    }
+
+    #[test]
+    fn rejects_control_whitespace_name() {
+        assert_eq!(
+            sanitize_user_name(Some("Ivan\nAdmin")),
+            "eblan with symbols"
+        );
+    }
+
+    #[test]
+    fn generates_non_zero_synthetic_quota_key() {
+        assert_ne!(synthetic_quota_key(-1001234567890, 42), 0);
+        assert_ne!(
+            synthetic_quota_key(-1001234567890, 42),
+            synthetic_quota_key(-1001234567890, 43)
+        );
     }
 }
