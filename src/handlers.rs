@@ -76,54 +76,64 @@ pub async fn process_video(bot: &Bot, msg: &Message) -> AnyResult<()> {
     // Скачиваем файл.
     let file_path = download_file(bot, &file_id).await?;
 
-    // Клонируем file_path для передачи в замыкание, чтобы оригинал оставался доступен
-    let file_path_clone = file_path.clone();
+    let mut converted_file_path: Option<String> = None;
 
-    // Конвертация файла выполняется в отдельном блокирующем потоке.
-    let join_result = task::spawn_blocking(move || convert_video_to_mp4(&file_path_clone))
-        .await
-        .context("Failed to join blocking task")?;
-    let converted_file_path = join_result.context("FFmpeg conversion failed")?;
+    let processing_result: AnyResult<()> = async {
+        // Клонируем file_path для передачи в замыкание, чтобы оригинал оставался доступен
+        let file_path_clone = file_path.clone();
 
-    // Формируем запрос на отправку видео.
-    let mut send_video_request = bot
-        .send_video(msg.chat.id, InputFile::file(&converted_file_path))
-        .disable_notification(true);
+        // Конвертация файла выполняется в отдельном блокирующем потоке.
+        let join_result = task::spawn_blocking(move || convert_video_to_mp4(&file_path_clone))
+            .await
+            .context("Failed to join blocking task")?;
+        let converted_path = join_result.context("FFmpeg conversion failed")?;
+        converted_file_path = Some(converted_path.clone());
 
-    if let Some(thread_id) = msg.thread_id {
-        send_video_request = send_video_request.message_thread_id(thread_id);
+        // Формируем запрос на отправку видео.
+        let mut send_video_request = bot
+            .send_video(msg.chat.id, InputFile::file(&converted_path))
+            .disable_notification(true);
+
+        if let Some(thread_id) = msg.thread_id {
+            send_video_request = send_video_request.message_thread_id(thread_id);
+        }
+
+        if let Some(user) = msg.from() {
+            let full_name = user.full_name();
+            let signature = format!("send by [{}](tg://user?id={})", full_name, user.id);
+            let caption = msg.caption().map_or_else(
+                || signature.clone(),
+                |existing_caption| format!("{}\n\n{}", existing_caption, signature),
+            );
+            send_video_request = send_video_request
+                .caption(caption)
+                .allow_sending_without_reply(true);
+        }
+
+        if let Some(reply_msg) = msg.reply_to_message() {
+            send_video_request = send_video_request.reply_to_message_id(reply_msg.id);
+        }
+
+        send_video_request = send_video_request.parse_mode(ParseMode::MarkdownV2);
+        send_video_request.await?;
+
+        // Удаляем оригинальное сообщение.
+        bot.delete_message(msg.chat.id, msg.id).await?;
+
+        Ok(())
     }
+    .await;
 
-    if let Some(user) = msg.from() {
-        let full_name = user.full_name();
-        let signature = format!("send by [{}](tg://user?id={})", full_name, user.id);
-        let caption = msg.caption().map_or_else(
-            || signature.clone(),
-            |existing_caption| format!("{}\n\n{}", existing_caption, signature),
-        );
-        send_video_request = send_video_request
-            .caption(caption)
-            .allow_sending_without_reply(true);
-    }
-
-    if let Some(reply_msg) = msg.reply_to_message() {
-        send_video_request = send_video_request.reply_to_message_id(reply_msg.id);
-    }
-    send_video_request = send_video_request.parse_mode(ParseMode::MarkdownV2);
-    send_video_request.await?;
-
-    // Удаляем оригинальное сообщение.
-    bot.delete_message(msg.chat.id, msg.id).await?;
-
-    // Асинхронное удаление временных файлов с логированием ошибок.
     if let Err(e) = fs::remove_file(&file_path).await {
         log::error!("Error deleting file {}: {:?}", file_path, e);
     }
-    if let Err(e) = fs::remove_file(&converted_file_path).await {
-        log::error!("Error deleting file {}: {:?}", converted_file_path, e);
+    if let Some(converted_path) = converted_file_path {
+        if let Err(e) = fs::remove_file(&converted_path).await {
+            log::error!("Error deleting file {}: {:?}", converted_path, e);
+        }
     }
 
-    Ok(())
+    processing_result
 }
 
 #[cfg(test)]
