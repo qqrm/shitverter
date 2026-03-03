@@ -1,5 +1,5 @@
 # Build Stage
-FROM clux/muslrust:1.75.0-stable as builder
+FROM clux/muslrust:1.85.0-stable AS builder
 WORKDIR /home/rust/src
 
 # Cache dependencies
@@ -20,7 +20,7 @@ RUN touch src/main.rs
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Run Stage
-FROM alpine:3.19 as runtime
+FROM alpine:3.19 AS runtime
 
 # Install FFmpeg
 RUN apk add --no-cache ffmpeg
