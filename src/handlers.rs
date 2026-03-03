@@ -9,8 +9,7 @@ use crate::converter::convert_video_to_mp4;
 use crate::telegram::download_file;
 
 const VIDEO_FILE_EXTENSIONS: &[&str] = &[
-    "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "ts", "webm",
-    "wmv",
+    "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "webm", "wmv",
 ];
 
 fn has_video_extension(file_name: &str) -> bool {
