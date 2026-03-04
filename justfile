@@ -1,6 +1,7 @@
 # Переменные
 container_name := "my_shitverter_container"
 image_name := "shitverter:latest"
+build_env_image_name := "shitverter-buildenv:latest"
 
 # Показать список доступных команд
 default:
@@ -18,3 +19,7 @@ rebuild:
 # Запустить контейнер (без пересборки)
 run:
     IMAGE_NAME={{image_name}} CONTAINER_NAME={{container_name}} ./run.sh
+
+# Собрать toolchain-образ (Rust + musl) для локальной сборки/отладки
+build-env:
+    docker build --target build-env -t {{build_env_image_name}} .
