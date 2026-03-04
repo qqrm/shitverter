@@ -1,0 +1,13 @@
+# Rust build artifacts
+target/
+
+# VCS / IDE
+.git/
+.github/
+.vscode/
+
+# Local config/secrets
+.env
+
+# Misc
+*.log
