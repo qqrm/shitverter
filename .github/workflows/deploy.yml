@@ -3,19 +3,19 @@ name: Deploy
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build and deploy immutable image
+  build:
+    name: Build immutable image
     runs-on: ubuntu-24.04
-    environment: production
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_reference: ${{ steps.image.outputs.reference }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +31,16 @@ jobs:
           docker buildx build --platform linux/amd64 --provenance=true --sbom=true --push --tag "$image_tag" .
           digest="$(docker buildx imagetools inspect "$image_tag" --format '{{.Manifest.Digest}}')"
           printf 'reference=%s@%s\n' "$image_repository" "$digest" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy immutable image
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Configure SSH
         env:
@@ -61,7 +71,7 @@ jobs:
 
       - name: Install deployment files and restart bot
         env:
-          IMAGE_REFERENCE: ${{ steps.image.outputs.reference }}
+          IMAGE_REFERENCE: ${{ needs.build.outputs.image_reference }}
         run: |
           set -euo pipefail
           ssh -F "$RUNNER_TEMP/ssh/config" production 'mkdir -p "$HOME/shitverter"'
