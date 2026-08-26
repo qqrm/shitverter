@@ -1,11 +1,15 @@
 use anyhow::{anyhow, Context, Result as AnyResult};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 fn build_output_path(file_path: &str) -> String {
     let path = Path::new(file_path);
-    let mut output_path = PathBuf::from(path);
-    output_path.set_extension("mp4");
+    let mut output_name = path
+        .file_name()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "video".into());
+    output_name.push(".converted.mp4");
+    let output_path = path.with_file_name(output_name);
     output_path.to_string_lossy().to_string()
 }
 
@@ -66,12 +70,26 @@ mod tests {
     use super::build_output_path;
 
     #[test]
-    fn replaces_existing_extension_with_mp4() {
-        assert_eq!(build_output_path("/tmp/example.mkv"), "/tmp/example.mp4");
+    fn keeps_output_distinct_from_input_with_existing_extension() {
+        assert_eq!(
+            build_output_path("/tmp/example.mkv"),
+            "/tmp/example.mkv.converted.mp4"
+        );
     }
 
     #[test]
-    fn appends_mp4_when_extension_absent() {
-        assert_eq!(build_output_path("/tmp/example"), "/tmp/example.mp4");
+    fn keeps_output_distinct_from_mp4_input() {
+        assert_eq!(
+            build_output_path("/tmp/example.mp4"),
+            "/tmp/example.mp4.converted.mp4"
+        );
+    }
+
+    #[test]
+    fn appends_converted_mp4_when_extension_absent() {
+        assert_eq!(
+            build_output_path("/tmp/example"),
+            "/tmp/example.converted.mp4"
+        );
     }
 }
