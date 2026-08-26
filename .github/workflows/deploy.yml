@@ -22,6 +22,7 @@ jobs:
       - name: Build and publish image
         id: image
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
         run: |
           set -euo pipefail
