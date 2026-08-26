@@ -29,4 +29,7 @@ jobs:
           cargo +stable audit
 
       - name: Build production image
-        run: docker build --tag shitverter:ci .
+        run: |
+          docker build --tag shitverter:ci .
+          expected_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          test "$(docker run --rm shitverter:ci --version)" = "converter-bot $expected_version"

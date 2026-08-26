@@ -29,15 +29,15 @@ legacy_was_running="$(docker inspect --format '{{.State.Running}}' "$legacy_cont
 readonly legacy_was_running
 
 rollback() {
-  if [[ -n "$previous_image" ]]; then
+  if [[ "$legacy_was_running" == "true" ]]; then
+    echo "restarting legacy container $legacy_container_name" >&2
+    docker start "$legacy_container_name"
+  elif [[ -n "$previous_image" ]]; then
     echo "rolling back to $previous_image" >&2
     SHITVERTER_IMAGE="$previous_image" docker compose \
       --project-name shitverter \
       -f "$compose_file" \
       up --detach --force-recreate --remove-orphans
-  elif [[ "$legacy_was_running" == "true" ]]; then
-    echo "restarting legacy container $legacy_container_name" >&2
-    docker start "$legacy_container_name"
   else
     echo "no previous running deployment is available for rollback" >&2
   fi
@@ -57,11 +57,15 @@ if ! SHITVERTER_IMAGE="$image_reference" docker compose \
   exit 1
 fi
 
-sleep 5
-if ! docker inspect --format '{{.State.Running}}' "$container_name" 2>/dev/null | grep -qx true; then
-  echo "new container exited" >&2
-  rollback
-  exit 1
-fi
+for _ in {1..15}; do
+  container_state="$(docker inspect --format '{{.State.Running}} {{.State.Restarting}} {{.RestartCount}}' "$container_name" 2>/dev/null || true)"
+  if [[ "$container_state" != "true false 0" ]]; then
+    echo "new container is not stable: $container_state" >&2
+    docker logs --tail 50 "$container_name" >&2 || true
+    rollback
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "deployed $image_reference"

@@ -67,6 +67,11 @@ async fn start_quota_monitor(limiter: Arc<Mutex<RateLimiter>>) {
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--version")) {
+        println!("converter-bot {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     dotenv().ok();
     pretty_env_logger::formatted_timed_builder()
         .parse_filters(&std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))

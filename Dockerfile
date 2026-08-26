@@ -26,7 +26,10 @@ RUN cargo build --release --locked --target x86_64-unknown-linux-musl
 # ---- build the real application ----
 RUN rm -f src/main.rs
 COPY src ./src
-RUN cargo build --release --locked --target x86_64-unknown-linux-musl
+# The copied sources may have older mtimes than the dependency-cache artifact.
+# Touch them so Cargo cannot reuse the placeholder binary above.
+RUN find src -type f -exec touch {} + \
+  && cargo build --release --locked --target x86_64-unknown-linux-musl
 
 # ---- production runtime ----
 FROM alpine:3.23.3 AS runtime
