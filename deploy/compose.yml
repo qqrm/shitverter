@@ -1,0 +1,19 @@
+name: shitverter
+
+services:
+  bot:
+    image: ${SHITVERTER_IMAGE:?set SHITVERTER_IMAGE to an immutable GHCR digest}
+    container_name: shitverter
+    env_file:
+      - ./shitverter.env
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1g,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    stop_grace_period: 30s

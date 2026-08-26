@@ -1,9 +1,13 @@
 use anyhow::{Context, Result as AnyResult};
 use teloxide::{
     prelude::*,
-    types::{InputFile, MediaKind, MessageKind, ParseMode},
+    types::{InputFile, MediaKind, MessageKind, ParseMode, ReplyParameters},
 };
-use tokio::{fs, sync::Mutex, task};
+use tokio::{
+    fs,
+    sync::{Mutex, Semaphore},
+    task,
+};
 
 use crate::converter::convert_video_to_mp4;
 use crate::limits::{utc_day_index, QuotaDecision, RateLimiter};
@@ -49,7 +53,7 @@ fn sanitize_user_name(name: Option<&str>) -> String {
 }
 
 fn quota_subject_key(msg: &Message) -> i64 {
-    if let Some(user) = msg.from() {
+    if let Some(user) = msg.from.as_ref() {
         return user.id.0 as i64;
     }
 
@@ -62,12 +66,44 @@ fn synthetic_quota_key(chat_id: i64, message_id: i64) -> i64 {
     chat_id.wrapping_mul(1_000_003).wrapping_add(message_id) ^ i64::MIN
 }
 
+fn escape_markdown_v2(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for character in text.chars() {
+        if matches!(
+            character,
+            '_' | '*'
+                | '['
+                | ']'
+                | '('
+                | ')'
+                | '~'
+                | '`'
+                | '>'
+                | '#'
+                | '+'
+                | '-'
+                | '='
+                | '|'
+                | '{'
+                | '}'
+                | '.'
+                | '!'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
 pub async fn process_video(
     bot: &Bot,
     msg: &Message,
     limiter: &Mutex<RateLimiter>,
+    conversion_slots: &Semaphore,
+    max_input_bytes: u64,
 ) -> AnyResult<()> {
-    let user = msg.from();
+    let user = msg.from.as_ref();
     let user_id = quota_subject_key(msg);
     let user_name = sanitize_user_name(user.map(|u| u.full_name()).as_deref());
 
@@ -191,8 +227,13 @@ pub async fn process_video(
         }
     }
 
+    let _conversion_permit = conversion_slots
+        .acquire()
+        .await
+        .context("Conversion queue is unavailable")?;
+
     // Скачиваем файл.
-    let file_path = download_file(bot, &file_id).await?;
+    let file_path = download_file(bot, &file_id, max_input_bytes).await?;
 
     let mut converted_file_path: Option<String> = None;
 
@@ -216,20 +257,21 @@ pub async fn process_video(
             send_video_request = send_video_request.message_thread_id(thread_id);
         }
 
-        if let Some(user) = msg.from() {
-            let full_name = user.full_name();
+        if let Some(user) = msg.from.as_ref() {
+            let full_name = escape_markdown_v2(&user.full_name());
             let signature = format!("send by [{}](tg://user?id={})", full_name, user.id);
             let caption = msg.caption().map_or_else(
                 || signature.clone(),
-                |existing_caption| format!("{}\n\n{}", existing_caption, signature),
+                |existing_caption| {
+                    format!("{}\n\n{}", escape_markdown_v2(existing_caption), signature)
+                },
             );
-            send_video_request = send_video_request
-                .caption(caption)
-                .allow_sending_without_reply(true);
+            send_video_request = send_video_request.caption(caption);
         }
 
         if let Some(reply_msg) = msg.reply_to_message() {
-            send_video_request = send_video_request.reply_to_message_id(reply_msg.id);
+            send_video_request = send_video_request
+                .reply_parameters(ReplyParameters::new(reply_msg.id).allow_sending_without_reply());
         }
 
         send_video_request = send_video_request.parse_mode(ParseMode::MarkdownV2);
@@ -256,7 +298,7 @@ pub async fn process_video(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_video_document, sanitize_user_name, synthetic_quota_key};
+    use super::{escape_markdown_v2, is_video_document, sanitize_user_name, synthetic_quota_key};
 
     #[test]
     fn detects_video_mime_type() {
@@ -307,5 +349,10 @@ mod tests {
             synthetic_quota_key(-1001234567890, 42),
             synthetic_quota_key(-1001234567890, 43)
         );
+    }
+
+    #[test]
+    fn escapes_untrusted_markdown_v2_caption_text() {
+        assert_eq!(escape_markdown_v2("name_[x]!"), r"name\_\[x\]\!");
     }
 }

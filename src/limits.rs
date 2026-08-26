@@ -56,7 +56,7 @@ impl RateLimiter {
     }
 
     pub fn reset_if_new_day(&mut self, now_day_index: u64) -> bool {
-        if now_day_index != self.day_index {
+        if now_day_index > self.day_index {
             self.day_index = now_day_index;
             self.global_count = 0;
             self.user_counts.clear();
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn enforces_per_user_limit() {
         let mut limiter = RateLimiter::new(2, 100);
-        let day = 20_000;
+        let day = limiter.current_day_index();
 
         assert!(matches!(
             limiter.check_and_consume(1, day),
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn enforces_global_limit() {
         let mut limiter = RateLimiter::new(10, 2);
-        let day = 20_000;
+        let day = limiter.current_day_index();
 
         assert!(matches!(
             limiter.check_and_consume(1, day),
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn resets_on_new_day() {
         let mut limiter = RateLimiter::new(1, 1);
-        let day1 = 20_000;
+        let day1 = limiter.current_day_index();
         let day2 = day1 + 1;
 
         assert!(matches!(
@@ -186,5 +186,20 @@ mod tests {
         let next_day = UNIX_EPOCH + Duration::from_secs(86_400);
         assert_eq!(utc_day_index(start), 0);
         assert_eq!(utc_day_index(next_day), 1);
+    }
+
+    #[test]
+    fn does_not_reset_quota_when_clock_moves_backwards() {
+        let mut limiter = RateLimiter::new(1, 1);
+        let current_day = limiter.current_day_index();
+        assert!(matches!(
+            limiter.check_and_consume(1, current_day),
+            QuotaDecision::Allowed { .. }
+        ));
+        assert!(!limiter.reset_if_new_day(current_day - 1));
+        assert!(matches!(
+            limiter.check_and_consume(1, current_day - 1),
+            QuotaDecision::GlobalLimitExceeded { .. }
+        ));
     }
 }

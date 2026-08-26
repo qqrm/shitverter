@@ -1,5 +1,5 @@
 use anyhow::{Context, Result as AnyResult};
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use teloxide::prelude::*;
@@ -19,6 +19,8 @@ use limits::{utc_day_index, RateLimiter};
 
 const DEFAULT_USER_DAILY_LIMIT: u32 = 10;
 const DEFAULT_GLOBAL_DAILY_LIMIT: u32 = 50;
+const DEFAULT_MAX_INPUT_BYTES: u32 = 100 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT_CONVERSIONS: u32 = 1;
 
 async fn ensure_bot_credentials(bot: &Bot) -> AnyResult<()> {
     bot.get_me()
@@ -73,20 +75,29 @@ async fn main() -> AnyResult<()> {
 
     let user_daily_limit = parse_env_limit("USER_DAILY_LIMIT", DEFAULT_USER_DAILY_LIMIT);
     let global_daily_limit = parse_env_limit("GLOBAL_DAILY_LIMIT", DEFAULT_GLOBAL_DAILY_LIMIT);
+    let max_input_bytes = u64::from(parse_env_limit("MAX_INPUT_BYTES", DEFAULT_MAX_INPUT_BYTES));
+    let max_concurrent_conversions = parse_env_limit(
+        "MAX_CONCURRENT_CONVERSIONS",
+        DEFAULT_MAX_CONCURRENT_CONVERSIONS,
+    )
+    .max(1) as usize;
 
     let limiter = Arc::new(Mutex::new(RateLimiter::new(
         user_daily_limit,
         global_daily_limit,
     )));
     let monitor_limiter = Arc::clone(&limiter);
+    let conversion_slots = Arc::new(tokio::sync::Semaphore::new(max_concurrent_conversions));
 
     {
         let limiter = limiter.lock().await;
         log::info!(
-            "Rate limits initialized: day_index={}, user_daily_limit={}, global_daily_limit={}, next_reset_in_seconds={}",
+            "Limits initialized: day_index={}, user_daily_limit={}, global_daily_limit={}, max_input_bytes={}, max_concurrent_conversions={}, next_reset_in_seconds={}",
             limiter.current_day_index(),
             user_daily_limit,
             global_daily_limit,
+            max_input_bytes,
+            max_concurrent_conversions,
             next_midnight_utc_seconds(),
         );
     }
@@ -104,8 +115,11 @@ async fn main() -> AnyResult<()> {
 
     teloxide::repl(bot, move |bot: Bot, msg: Message| {
         let limiter = Arc::clone(&limiter);
+        let conversion_slots = Arc::clone(&conversion_slots);
         async move {
-            if let Err(e) = process_video(&bot, &msg, &limiter).await {
+            if let Err(e) =
+                process_video(&bot, &msg, &limiter, &conversion_slots, max_input_bytes).await
+            {
                 log::error!("Error processing video file: {:?}", e);
             }
             respond(())

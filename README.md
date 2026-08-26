@@ -62,6 +62,10 @@ Set the following environment variables:
 
 * `TELOXIDE_TOKEN`: Your Telegram Bot Token.
 * `RUST_LOG`: Log level filter for the bot output (example: `RUST_LOG=info`, default: `info`).
+* `USER_DAILY_LIMIT` (default: `10`) — maximum conversions per user per UTC day.
+* `GLOBAL_DAILY_LIMIT` (default: `50`) — maximum conversions for the whole bot per UTC day.
+* `MAX_INPUT_BYTES` (default: `104857600`, 100 MiB) — maximum downloaded source-video size.
+* `MAX_CONCURRENT_CONVERSIONS` (default: `1`) — simultaneous download-and-FFmpeg jobs.
 
 If a local `.env` file exists, `run.sh` and `rebuild.sh` automatically pass it to
 `docker run` using `--env-file .env`.
@@ -73,11 +77,17 @@ Also shows tg ID's of new members.
 
 ## Rate limits
 
-* `USER_DAILY_LIMIT` (default: `10`) — maximum conversions per user per UTC day.
-* `GLOBAL_DAILY_LIMIT` (default: `50`) — maximum conversions for the whole bot per UTC day.
-
-The bot logs quota decisions and resets counters at UTC midnight.
+The bot logs quota decisions and resets counters at UTC midnight. Limits are held only in memory, so a restart resets them.
 
 ## Contributing
 
 Contributions are welcome. Please send pull requests.
+
+## CI and production deployment
+
+GitHub Actions validates formatting, tests, lints, RustSec advisories, and the
+production Docker build for pull requests and `main`. A separate manually
+promoted GitHub Actions workflow can publish an immutable GHCR image and deploy
+it to the bot VM without copying the Telegram token to GitHub. See
+[`deploy/README.md`](deploy/README.md) for VM bootstrap and the required GitHub
+environment secrets.
