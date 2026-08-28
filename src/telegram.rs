@@ -1,13 +1,46 @@
 use anyhow::{anyhow, Context, Result as AnyResult};
 use std::{
+    error::Error,
+    fmt,
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
 };
-use teloxide::prelude::*;
+use teloxide::{prelude::*, ApiError, RequestError};
 use tokio::{fs, io::AsyncWriteExt};
 
 static DOWNLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug)]
+pub struct FileTooLargeError {
+    pub limit_bytes: Option<u64>,
+}
+
+impl fmt::Display for FileTooLargeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.limit_bytes {
+            Some(limit_bytes) => write!(
+                formatter,
+                "file exceeds the configured download limit of {limit_bytes} bytes"
+            ),
+            None => {
+                formatter.write_str("Telegram refused to provide the file because it is too large")
+            }
+        }
+    }
+}
+
+impl Error for FileTooLargeError {}
+
+fn is_telegram_file_too_large(error: &RequestError) -> bool {
+    match error {
+        RequestError::Api(ApiError::RequestEntityTooLarge) => true,
+        RequestError::Api(ApiError::Unknown(message)) => {
+            message.to_ascii_lowercase().contains("file is too big")
+        }
+        _ => false,
+    }
+}
 
 fn extract_extension(file_path: &str) -> &str {
     let extension = Path::new(file_path)
@@ -34,14 +67,23 @@ fn download_path(extension: &str) -> PathBuf {
 
 /// Скачивает файл с серверов Telegram по его идентификатору.
 pub async fn download_file(bot: &Bot, file_id: &str, max_bytes: u64) -> AnyResult<String> {
-    let file = bot.get_file(file_id.to_owned().into()).send().await?;
+    let file = bot
+        .get_file(file_id.to_owned().into())
+        .send()
+        .await
+        .map_err(|error| {
+            if is_telegram_file_too_large(&error) {
+                anyhow::Error::new(FileTooLargeError { limit_bytes: None })
+            } else {
+                anyhow::Error::new(error)
+            }
+        })?;
 
     if u64::from(file.size) > max_bytes {
-        return Err(anyhow!(
-            "Telegram file is too large: {} bytes exceeds configured limit of {} bytes",
-            file.size,
-            max_bytes,
-        ));
+        return Err(FileTooLargeError {
+            limit_bytes: Some(max_bytes),
+        }
+        .into());
     }
 
     let download_url = format!(
@@ -64,10 +106,10 @@ pub async fn download_file(bot: &Bot, file_id: &str, max_bytes: u64) -> AnyResul
             .content_length()
             .is_some_and(|content_length| content_length > max_bytes)
         {
-            return Err(anyhow!(
-                "Telegram download is too large: response advertises more than {} bytes",
-                max_bytes,
-            ));
+            return Err(FileTooLargeError {
+                limit_bytes: Some(max_bytes),
+            }
+            .into());
         }
 
         let mut downloaded_bytes = 0_u64;
@@ -76,10 +118,10 @@ pub async fn download_file(bot: &Bot, file_id: &str, max_bytes: u64) -> AnyResul
                 .checked_add(chunk.len() as u64)
                 .ok_or_else(|| anyhow!("Telegram download size overflow"))?;
             if downloaded_bytes > max_bytes {
-                return Err(anyhow!(
-                    "Telegram download exceeds configured limit of {} bytes",
-                    max_bytes,
-                ));
+                return Err(FileTooLargeError {
+                    limit_bytes: Some(max_bytes),
+                }
+                .into());
             }
             destination.write_all(&chunk).await?;
         }
@@ -105,7 +147,8 @@ pub async fn download_file(bot: &Bot, file_id: &str, max_bytes: u64) -> AnyResul
 
 #[cfg(test)]
 mod tests {
-    use super::extract_extension;
+    use super::{extract_extension, is_telegram_file_too_large};
+    use teloxide::{ApiError, RequestError};
 
     #[test]
     fn extracts_extension_from_path() {
@@ -130,5 +173,24 @@ mod tests {
     #[test]
     fn rejects_unsafe_extension() {
         assert_eq!(extract_extension("videos/source.mp4;rm"), "bin");
+    }
+
+    #[test]
+    fn recognizes_telegram_file_too_big_error() {
+        let error = RequestError::Api(ApiError::Unknown(
+            "Bad Request: file is too big".to_string(),
+        ));
+        assert!(is_telegram_file_too_large(&error));
+        assert!(is_telegram_file_too_large(&RequestError::Api(
+            ApiError::RequestEntityTooLarge,
+        )));
+    }
+
+    #[test]
+    fn does_not_classify_unrelated_telegram_error_as_too_large() {
+        let error = RequestError::Api(ApiError::Unknown(
+            "Bad Request: invalid file_id".to_string(),
+        ));
+        assert!(!is_telegram_file_too_large(&error));
     }
 }

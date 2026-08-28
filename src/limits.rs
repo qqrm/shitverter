@@ -101,6 +101,25 @@ impl RateLimiter {
             day_index: self.day_index,
         }
     }
+
+    pub fn refund(&mut self, user_id: i64, consumed_day_index: u64) -> bool {
+        if consumed_day_index != self.day_index {
+            return false;
+        }
+
+        match self.user_counts.get(&user_id).copied() {
+            Some(count) if count > 1 => {
+                self.user_counts.insert(user_id, count - 1);
+            }
+            Some(1) => {
+                self.user_counts.remove(&user_id);
+            }
+            _ => return false,
+        }
+
+        self.global_count = self.global_count.saturating_sub(1);
+        true
+    }
 }
 
 #[cfg(test)]
@@ -201,5 +220,27 @@ mod tests {
             limiter.check_and_consume(1, current_day - 1),
             QuotaDecision::GlobalLimitExceeded { .. }
         ));
+    }
+
+    #[test]
+    fn refunds_consumed_quota_only_once_on_the_same_day() {
+        let mut limiter = RateLimiter::new(1, 1);
+        let day = limiter.current_day_index();
+
+        assert!(matches!(
+            limiter.check_and_consume(7, day),
+            QuotaDecision::Allowed { .. }
+        ));
+        assert!(limiter.refund(7, day));
+        assert!(!limiter.refund(7, day));
+        assert!(matches!(
+            limiter.check_and_consume(7, day),
+            QuotaDecision::Allowed {
+                user_count: 1,
+                global_count: 1,
+                ..
+            }
+        ));
+        assert!(!limiter.refund(7, day + 1));
     }
 }

@@ -11,7 +11,7 @@ use tokio::{
 
 use crate::converter::convert_video_to_mp4;
 use crate::limits::{utc_day_index, QuotaDecision, RateLimiter};
-use crate::telegram::download_file;
+use crate::telegram::{download_file, FileTooLargeError};
 
 const VIDEO_FILE_EXTENSIONS: &[&str] = &[
     "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "webm", "wmv",
@@ -96,6 +96,17 @@ fn escape_markdown_v2(text: &str) -> String {
     escaped
 }
 
+fn file_too_large_message(error: &FileTooLargeError) -> String {
+    match error.limit_bytes {
+        Some(limit_bytes) => format!(
+            "Файл слишком большой. Максимальный размер для обработки — {} МиБ.",
+            limit_bytes / (1024 * 1024),
+        ),
+        None => "Файл слишком большой: Telegram не позволяет боту его скачать. Пришли файл меньшего размера."
+            .to_string(),
+    }
+}
+
 pub async fn process_video(
     bot: &Bot,
     msg: &Message,
@@ -162,7 +173,7 @@ pub async fn process_video(
         limiter.check_and_consume(user_id, utc_day_index(std::time::SystemTime::now()))
     };
 
-    match quota_decision {
+    let consumed_day_index = match quota_decision {
         QuotaDecision::Allowed {
             user_count,
             user_limit,
@@ -179,6 +190,7 @@ pub async fn process_video(
                 global_count,
                 global_limit,
             );
+            day_index
         }
         QuotaDecision::UserLimitExceeded {
             user_count,
@@ -225,7 +237,7 @@ pub async fn process_video(
             .await?;
             return Ok(());
         }
-    }
+    };
 
     let _conversion_permit = conversion_slots
         .acquire()
@@ -233,7 +245,33 @@ pub async fn process_video(
         .context("Conversion queue is unavailable")?;
 
     // Скачиваем файл.
-    let file_path = download_file(bot, &file_id, max_input_bytes).await?;
+    let file_path = match download_file(bot, &file_id, max_input_bytes).await {
+        Ok(file_path) => file_path,
+        Err(error) => {
+            let Some(file_too_large) = error.downcast_ref::<FileTooLargeError>() else {
+                return Err(error);
+            };
+
+            let refunded = limiter.lock().await.refund(user_id, consumed_day_index);
+            log::warn!(
+                "Rejected oversized file: chat_id={}, message_id={}, user_id={}, quota_refunded={}, reason={}",
+                msg.chat.id,
+                msg.id,
+                user_id,
+                refunded,
+                file_too_large,
+            );
+
+            let mut request = bot
+                .send_message(msg.chat.id, file_too_large_message(file_too_large))
+                .reply_parameters(ReplyParameters::new(msg.id).allow_sending_without_reply());
+            if let Some(thread_id) = msg.thread_id {
+                request = request.message_thread_id(thread_id);
+            }
+            request.await?;
+            return Ok(());
+        }
+    };
 
     let mut converted_file_path: Option<String> = None;
 
@@ -298,7 +336,11 @@ pub async fn process_video(
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_markdown_v2, is_video_document, sanitize_user_name, synthetic_quota_key};
+    use super::{
+        escape_markdown_v2, file_too_large_message, is_video_document, sanitize_user_name,
+        synthetic_quota_key,
+    };
+    use crate::telegram::FileTooLargeError;
 
     #[test]
     fn detects_video_mime_type() {
@@ -354,5 +396,23 @@ mod tests {
     #[test]
     fn escapes_untrusted_markdown_v2_caption_text() {
         assert_eq!(escape_markdown_v2("name_[x]!"), r"name\_\[x\]\!");
+    }
+
+    #[test]
+    fn explains_configured_file_size_limit() {
+        assert_eq!(
+            file_too_large_message(&FileTooLargeError {
+                limit_bytes: Some(100 * 1024 * 1024),
+            }),
+            "Файл слишком большой. Максимальный размер для обработки — 100 МиБ.",
+        );
+    }
+
+    #[test]
+    fn explains_telegram_download_limit() {
+        assert_eq!(
+            file_too_large_message(&FileTooLargeError { limit_bytes: None }),
+            "Файл слишком большой: Telegram не позволяет боту его скачать. Пришли файл меньшего размера.",
+        );
     }
 }
