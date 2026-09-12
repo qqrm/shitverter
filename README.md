@@ -109,6 +109,11 @@ The bot logs quota decisions and resets counters at UTC midnight. Limits are hel
 
 Contributions are welcome. Please send pull requests.
 
+The checked-in toolchain follows Rust's `stable` channel. Fresh CI workers
+therefore pick up each stable Rust release. Dependabot checks Cargo, Docker, and
+GitHub Actions dependencies weekly; patch and minor updates merge automatically
+only after every reported check succeeds. Major updates remain open for review.
+
 ## CI and production deployment
 
 GitHub Actions validates formatting, tests, lints, RustSec advisories, and the
