@@ -134,8 +134,7 @@ pub async fn download_file(bot: &Bot, file_id: &str, max_bytes: u64) -> AnyResul
         drop(destination);
         if let Err(remove_error) = fs::remove_file(&file_path).await {
             log::warn!(
-                "Failed to remove incomplete download {}: {:?}",
-                file_path.display(),
+                "Failed to remove an incomplete temporary download: {:?}",
                 remove_error
             );
         }
