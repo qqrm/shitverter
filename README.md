@@ -61,11 +61,37 @@ docker build --build-arg MUSLRUST_TAG=1.93.1-stable-2026-02-23 -t shitverter:lat
 Set the following environment variables:
 
 * `TELOXIDE_TOKEN`: Your Telegram Bot Token.
+* `ALLOWED_TELEGRAM_USER_ID`: required in `--drain-queue` mode; only updates
+  whose sender has this numeric Telegram user ID may reach the download and
+  conversion path. All other updates are acknowledged and silently discarded.
 * `RUST_LOG`: Log level filter for the bot output (example: `RUST_LOG=info`, default: `info`).
 * `USER_DAILY_LIMIT` (default: `10`) — maximum conversions per user per UTC day.
 * `GLOBAL_DAILY_LIMIT` (default: `50`) — maximum conversions for the whole bot per UTC day.
 * `MAX_INPUT_BYTES` (default: `104857600`, 100 MiB) — maximum downloaded source-video size.
+* `MAX_OUTPUT_BYTES` (default: `49000000`) — maximum converted-video size before upload.
 * `MAX_CONCURRENT_CONVERSIONS` (default: `1`) — simultaneous download-and-FFmpeg jobs.
+
+## One-shot queue mode
+
+Released binaries also support a bounded, stateless queue-drain mode for ephemeral
+CI workers:
+
+```bash
+converter-bot --drain-queue
+```
+
+It consumes Telegram `getUpdates` sequentially, handles at most one media job and
+100 updates by default, then exits. Override those bounds with
+`MAX_CONVERSIONS_PER_RUN` and `MAX_UPDATES_PER_RUN`. Do not run this mode while the
+long-running bot or a webhook is consuming updates for the same token.
+
+`ALLOWED_TELEGRAM_USER_ID` is mandatory in queue mode. Authorization is checked
+before Telegram file metadata is requested or media is downloaded. Messages
+without a sender user (including channel posts) are rejected.
+
+Queue delivery is at-least-once: a crash after sending a result but before
+acknowledging its update can create a duplicate. Pending Telegram updates are not
+a durable replacement for a database-backed queue.
 
 If a local `.env` file exists, `run.sh` and `rebuild.sh` automatically pass it to
 `docker run` using `--env-file .env`.

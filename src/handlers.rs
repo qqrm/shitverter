@@ -17,6 +17,13 @@ const VIDEO_FILE_EXTENSIONS: &[&str] = &[
     "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "webm", "wmv",
 ];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcessOutcome {
+    Ignored,
+    HandledWithoutConversion,
+    Converted,
+}
+
 fn has_video_extension(file_name: &str) -> bool {
     file_name
         .rsplit_once('.')
@@ -33,23 +40,6 @@ fn is_video_document(mime_type: Option<&str>, file_name: Option<&str>) -> bool {
     }
 
     file_name.map(has_video_extension).unwrap_or(false)
-}
-
-fn sanitize_user_name(name: Option<&str>) -> String {
-    let Some(name) = name else {
-        return "unknown".to_string();
-    };
-
-    if name.chars().all(|ch| {
-        ch.is_ascii_alphanumeric()
-            || ch == ' '
-            || ('А'..='я').contains(&ch)
-            || matches!(ch, 'Ё' | 'ё' | '_' | '-' | '.' | ' ')
-    }) {
-        name.to_string()
-    } else {
-        "eblan with symbols".to_string()
-    }
 }
 
 fn quota_subject_key(msg: &Message) -> i64 {
@@ -113,33 +103,18 @@ pub async fn process_video(
     limiter: &Mutex<RateLimiter>,
     conversion_slots: &Semaphore,
     max_input_bytes: u64,
-) -> AnyResult<()> {
-    let user = msg.from.as_ref();
+    max_output_bytes: u64,
+) -> AnyResult<ProcessOutcome> {
     let user_id = quota_subject_key(msg);
-    let user_name = sanitize_user_name(user.map(|u| u.full_name()).as_deref());
-
-    log::info!(
-        "Incoming message: chat_id={}, message_id={}, user_id={}, user_name='{}'",
-        msg.chat.id,
-        msg.id,
-        user_id,
-        user_name,
-    );
+    log::info!("Received a Telegram message");
 
     let MessageKind::Common(common) = &msg.kind else {
-        return Ok(());
+        return Ok(ProcessOutcome::Ignored);
     };
 
     let file_id = match &common.media_kind {
         MediaKind::Video(video) => {
-            log::info!(
-                "Incoming video message: chat_id={}, message_id={}, mime={:?}, file_name={:?}, file_id={}",
-                msg.chat.id,
-                msg.id,
-                video.video.mime_type,
-                video.video.file_name,
-                video.video.file.id
-            );
+            log::info!("Accepted a video message for validation");
             video.video.file.id.to_string()
         }
         MediaKind::Document(document) => {
@@ -150,22 +125,15 @@ pub async fn process_video(
                 .map(|mime| mime.essence_str());
             let file_name = document.document.file_name.as_deref();
 
-            log::info!(
-                "Incoming document message: chat_id={}, message_id={}, mime={:?}, file_name={:?}, file_id={}",
-                msg.chat.id,
-                msg.id,
-                mime_type,
-                file_name,
-                document.document.file.id
-            );
-
             if !is_video_document(mime_type, file_name) {
-                return Ok(());
+                return Ok(ProcessOutcome::Ignored);
             }
+
+            log::info!("Accepted a video document for validation");
 
             document.document.file.id.to_string()
         }
-        _ => return Ok(()),
+        _ => return Ok(ProcessOutcome::Ignored),
     };
 
     let quota_decision = {
@@ -182,9 +150,8 @@ pub async fn process_video(
             day_index,
         } => {
             log::info!(
-                "Quota allowed: day={}, user_id={}, user_count={}/{}, global_count={}/{}",
+                "Quota allowed: day={}, user_count={}/{}, global_count={}/{}",
                 day_index,
-                user_id,
                 user_count,
                 user_limit,
                 global_count,
@@ -200,9 +167,8 @@ pub async fn process_video(
             day_index,
         } => {
             log::warn!(
-                "User daily limit exceeded: day={}, user_id={}, user_count={}/{}, global_count={}/{}",
+                "User daily limit exceeded: day={}, user_count={}/{}, global_count={}/{}",
                 day_index,
-                user_id,
                 user_count,
                 user_limit,
                 global_count,
@@ -216,7 +182,7 @@ pub async fn process_video(
                 ),
             )
             .await?;
-            return Ok(());
+            return Ok(ProcessOutcome::HandledWithoutConversion);
         }
         QuotaDecision::GlobalLimitExceeded {
             global_count,
@@ -224,9 +190,8 @@ pub async fn process_video(
             day_index,
         } => {
             log::warn!(
-                "Global daily limit exceeded: day={}, user_id={}, global_count={}/{}",
+                "Global daily limit exceeded: day={}, global_count={}/{}",
                 day_index,
-                user_id,
                 global_count,
                 global_limit,
             );
@@ -235,7 +200,7 @@ pub async fn process_video(
                 "Service daily conversion limit is exhausted. Please try again tomorrow (UTC).",
             )
             .await?;
-            return Ok(());
+            return Ok(ProcessOutcome::HandledWithoutConversion);
         }
     };
 
@@ -254,10 +219,7 @@ pub async fn process_video(
 
             let refunded = limiter.lock().await.refund(user_id, consumed_day_index);
             log::warn!(
-                "Rejected oversized file: chat_id={}, message_id={}, user_id={}, quota_refunded={}, reason={}",
-                msg.chat.id,
-                msg.id,
-                user_id,
+                "Rejected oversized file: quota_refunded={}, reason={}",
                 refunded,
                 file_too_large,
             );
@@ -269,13 +231,13 @@ pub async fn process_video(
                 request = request.message_thread_id(thread_id);
             }
             request.await?;
-            return Ok(());
+            return Ok(ProcessOutcome::HandledWithoutConversion);
         }
     };
 
     let mut converted_file_path: Option<String> = None;
 
-    let processing_result: AnyResult<()> = async {
+    let processing_result: AnyResult<ProcessOutcome> = async {
         // Клонируем file_path для передачи в замыкание, чтобы оригинал оставался доступен
         let file_path_clone = file_path.clone();
 
@@ -285,6 +247,15 @@ pub async fn process_video(
             .context("Failed to join blocking task")?;
         let converted_path = join_result.context("FFmpeg conversion failed")?;
         converted_file_path = Some(converted_path.clone());
+
+        if fs::metadata(&converted_path).await?.len() > max_output_bytes {
+            bot.send_message(
+                msg.chat.id,
+                "После конвертации файл получился слишком большим для отправки через Telegram Bot API.",
+            )
+            .await?;
+            return Ok(ProcessOutcome::HandledWithoutConversion);
+        }
 
         // Формируем запрос на отправку видео.
         let mut send_video_request = bot
@@ -316,18 +287,20 @@ pub async fn process_video(
         send_video_request.await?;
 
         // Удаляем оригинальное сообщение.
-        bot.delete_message(msg.chat.id, msg.id).await?;
+        if bot.delete_message(msg.chat.id, msg.id).await.is_err() {
+            log::warn!("Converted video was sent, but the source message could not be deleted");
+        }
 
-        Ok(())
+        Ok(ProcessOutcome::Converted)
     }
     .await;
 
     if let Err(e) = fs::remove_file(&file_path).await {
-        log::error!("Error deleting file {}: {:?}", file_path, e);
+        log::error!("Failed to delete a temporary input file: {e}");
     }
     if let Some(converted_path) = converted_file_path {
         if let Err(e) = fs::remove_file(&converted_path).await {
-            log::error!("Error deleting file {}: {:?}", converted_path, e);
+            log::error!("Failed to delete a temporary output file: {e}");
         }
     }
 
@@ -337,8 +310,7 @@ pub async fn process_video(
 #[cfg(test)]
 mod tests {
     use super::{
-        escape_markdown_v2, file_too_large_message, is_video_document, sanitize_user_name,
-        synthetic_quota_key,
+        escape_markdown_v2, file_too_large_message, is_video_document, synthetic_quota_key,
     };
     use crate::telegram::FileTooLargeError;
 
@@ -364,24 +336,6 @@ mod tests {
             Some("application/pdf"),
             Some("document.pdf")
         ));
-    }
-
-    #[test]
-    fn keeps_safe_name() {
-        assert_eq!(sanitize_user_name(Some("Иван Ivan_01")), "Иван Ivan_01");
-    }
-
-    #[test]
-    fn replaces_unsafe_name() {
-        assert_eq!(sanitize_user_name(Some("bad🚀name")), "eblan with symbols");
-    }
-
-    #[test]
-    fn rejects_control_whitespace_name() {
-        assert_eq!(
-            sanitize_user_name(Some("Ivan\nAdmin")),
-            "eblan with symbols"
-        );
     }
 
     #[test]
