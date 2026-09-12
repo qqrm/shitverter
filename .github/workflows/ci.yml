@@ -12,21 +12,44 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust stable
-        run: rustup toolchain install stable --profile minimal
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+        with:
+          tool: cargo-nextest
+          fallback: none
 
       - name: Check formatting, tests, and lints
         run: |
           cargo +stable fmt --check
-          cargo +stable test --locked
+          cargo +stable nextest run --locked
           cargo +stable clippy --all-targets -- -D warnings
 
+      - name: Install dependency tooling
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+        with:
+          tool: |
+            cargo-audit@0.22.2
+            cargo-deny@0.20.2
+            cargo-machete@0.9.2
+          fallback: none
+
       - name: Audit dependencies
-        run: |
-          cargo +stable install cargo-audit --locked
-          cargo +stable audit
+        run: cargo audit
+
+      - name: Check dependency advisories and sources
+        run: cargo deny check advisories bans sources
+
+      - name: Check unused dependencies
+        run: cargo machete
 
       - name: Build production image
         run: |

@@ -1,0 +1,19 @@
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+# proc-macro-error2 is transitive through teloxide -> aquamarine. No safe
+# replacement is available in the current Teloxide line; cargo audit still
+# reports the upstream warning on every CI run.
+ignore = ["RUSTSEC-2026-0173"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
