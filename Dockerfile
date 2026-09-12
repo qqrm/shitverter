@@ -32,7 +32,7 @@ RUN find src -type f -exec touch {} + \
   && cargo build --release --locked --target x86_64-unknown-linux-musl
 
 # ---- production runtime ----
-FROM alpine:3.23.3 AS runtime
+FROM alpine:3.24.1 AS runtime
 
 # ffmpeg is required for video conversion; ca-certificates is needed for HTTPS (Telegram API).
 RUN apk add --no-cache ffmpeg ca-certificates \
