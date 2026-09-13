@@ -69,7 +69,6 @@ jobs:
             for _ in $(seq 1 "$attempts"); do
               checks_json="$(gh pr view "$pr" --repo "$REPO" --json statusCheckRollup --jq '
                 [.statusCheckRollup[] |
-                  select((.workflowName // "") != "Dependabot Automerge") |
                   select((.name // "") != "automerge")]
               ')"
               check_count="$(jq 'length' <<<"$checks_json")"
@@ -91,8 +90,11 @@ jobs:
                     echo "PR #$pr changed while checks were running; waiting for the new run."
                     return 0
                   fi
-                  gh pr merge "$pr" --repo "$REPO" --squash --delete-branch --match-head-commit "$head_sha"
-                  echo "Merged Dependabot PR #$pr after $check_count successful checks."
+                  if gh pr merge "$pr" --repo "$REPO" --squash --delete-branch --match-head-commit "$head_sha"; then
+                    echo "Merged Dependabot PR #$pr after $check_count successful checks."
+                  else
+                    echo "PR #$pr passed checks but could not be merged; it will be retried."
+                  fi
                   return 0
                   ;;
                 failed)
