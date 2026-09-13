@@ -51,7 +51,7 @@ jobs:
           check_pr() {
             local pr="$1"
             local pr_json author head_ref head_sha is_draft
-            local attempts checks_json check_count state current_head
+            local attempts checks_json check_count state current_head merge_response
 
             pr_json="$(gh pr view "$pr" --repo "$REPO" --json author,headRefName,headRefOid,isDraft)"
             author="$(jq -r '.author.login // ""' <<<"$pr_json")"
@@ -91,7 +91,9 @@ jobs:
                     echo "PR #$pr changed while checks were running; waiting for the new run."
                     return 0
                   fi
-                  if gh pr merge "$pr" --repo "$REPO" --squash --delete-branch --match-head-commit "$head_sha"; then
+                  if merge_response="$(gh api --method PUT "repos/$REPO/pulls/$pr/merge" \
+                    -f merge_method=squash \
+                    -f sha="$head_sha")" && jq -e '.merged == true' <<<"$merge_response" >/dev/null; then
                     echo "Merged Dependabot PR #$pr after $check_count successful checks."
                   else
                     echo "PR #$pr passed checks but could not be merged; it will be retried."
