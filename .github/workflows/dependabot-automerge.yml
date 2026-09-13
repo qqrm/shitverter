@@ -4,7 +4,7 @@ on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] metadata-only; never checks out or runs PR code
     types: [opened, reopened, synchronize, ready_for_review]
   workflow_run:
-    workflows: ["CI", "build", "pdf-validate", "Workflow Security"]
+    workflows: ["CI", "build", "pdf-validate", "Workflow Security", "CodeQL", "TWIR CI", "TWIR Fixture verify", "TWIR Audit"]
     types: [completed]
   schedule:
     - cron: "17 * * * *"
