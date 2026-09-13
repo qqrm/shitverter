@@ -28,13 +28,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_PATH: ${{ github.event_path }}
         run: |
           set -euo pipefail
 
           collect_prs() {
             if [ "$EVENT_NAME" = "pull_request_target" ]; then
-              jq -r '.pull_request.number' "$EVENT_PATH"
+              jq -r '.pull_request.number' "$GITHUB_EVENT_PATH"
             else
               gh pr list \
                 --repo "$REPO" \
