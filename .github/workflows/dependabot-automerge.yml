@@ -4,7 +4,7 @@ on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] metadata-only; never checks out or runs PR code
     types: [opened, reopened, synchronize, ready_for_review]
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +14,7 @@ permissions:
   statuses: read
 
 concurrency:
-  group: dependabot-automerge
+  group: dependabot-automerge-${{ github.event.pull_request.number || github.event.schedule || github.run_id }}
   cancel-in-progress: true
 
 jobs:
