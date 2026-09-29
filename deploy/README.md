@@ -27,10 +27,12 @@ MAX_INPUT_BYTES=104857600
 MAX_CONCURRENT_CONVERSIONS=1
 ```
 
-Use `chmod 600 ~/shitverter/shitverter.env`. Before the first workflow run,
-the VM must be allowed to pull `ghcr.io/qqrm/shitverter`. If the package is
-private, log in once with a fine-grained token limited to `Packages: Read` for
-this repository:
+Use `chmod 600 ~/shitverter/shitverter.env`. After the repository transfer,
+the VM must be allowed to pull `ghcr.io/qqrm-labs/shitverter`. GHCR packages
+remain in their original owner's namespace when a repository is transferred.
+Publish the new image with **Deploy** and `publish_only=true`, then make the
+new package public or authenticate the VM with a classic token scoped to
+`read:packages` and access to the package. For a private package:
 
 ```bash
 printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io --username qqrm --password-stdin
@@ -41,7 +43,7 @@ deployment account's `~/.ssh/authorized_keys`; do not reuse a personal key.
 
 ## GitHub environment
 
-Create a `production` environment in `qqrm/shitverter`, require an approval
+Keep the `production` environment in `qqrm-labs/shitverter`, require an approval
 reviewer, and add these environment secrets:
 
 | Secret | Value |
@@ -62,9 +64,10 @@ never writes `shitverter.env`.
 
 ## First deployment and rollback
 
-Run **Deploy** from the `main` commit. The workflow builds and pushes a
+Once the VM can pull the new image, run **Deploy** with `publish_only=false`
+from the `main` commit. The workflow builds and pushes a
 linux/amd64 image, then passes its SHA-256 image digest to the VM. The remote
-script refuses any other registry/name format, verifies that the container is
+script accepts only the old and new GHCR namespaces, verifies that the container is
 still running after five seconds, and restores the previous immutable image if
 the replacement exits.
 

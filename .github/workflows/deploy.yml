@@ -2,6 +2,11 @@ name: Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_only:
+        description: Publish the image without deploying it
+        type: boolean
+        default: false
 
 concurrency:
   group: production-deploy
@@ -33,12 +38,14 @@ jobs:
           image_repository="${IMAGE_REPOSITORY,,}"
           image_tag="$image_repository:sha-$GITHUB_SHA"
           printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          docker buildx build --platform linux/amd64 --provenance=true --sbom=true --push --tag "$image_tag" .
+          docker buildx build --platform linux/amd64 --provenance=true --sbom=true --push --tag "$image_tag" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" .
           digest="$(docker buildx imagetools inspect "$image_tag" --format '{{.Manifest.Digest}}')"
           printf 'reference=%s@%s\n' "$image_repository" "$digest" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy immutable image
+    if: ${{ inputs.publish_only != true }}
     needs: build
     runs-on: ubuntu-24.04
     environment: production
