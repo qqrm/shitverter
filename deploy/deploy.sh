@@ -8,12 +8,12 @@ readonly env_file="$deployment_dir/shitverter.env"
 readonly container_name="shitverter"
 readonly legacy_container_name="my_shitverter_container"
 if [[ $# -ne 1 ]]; then
-  echo "usage: $0 ghcr.io/qqrm/shitverter@sha256:<digest>" >&2
+  echo "usage: $0 ghcr.io/{qqrm,qqrm-labs}/shitverter@sha256:<digest>" >&2
   exit 64
 fi
 
 readonly image_reference="$1"
-if [[ ! "$image_reference" =~ ^ghcr\.io/qqrm/shitverter@sha256:[a-f0-9]{64}$ ]]; then
+if [[ ! "$image_reference" =~ ^ghcr\.io/(qqrm|qqrm-labs)/shitverter@sha256:[a-f0-9]{64}$ ]]; then
   echo "refusing unexpected image reference: $image_reference" >&2
   exit 64
 fi
