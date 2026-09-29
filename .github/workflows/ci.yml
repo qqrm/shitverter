@@ -23,7 +23,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+        uses: taiki-e/install-action@dfae9bf3d6f6c6f20ef4ebb3486c01a51341ff12 # v2.87.18
         with:
           tool: cargo-nextest
           fallback: none
@@ -35,7 +35,7 @@ jobs:
           cargo +stable clippy --all-targets -- -D warnings
 
       - name: Install dependency tooling
-        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+        uses: taiki-e/install-action@dfae9bf3d6f6c6f20ef4ebb3486c01a51341ff12 # v2.87.18
         with:
           tool: |
             cargo-audit@0.22.2
