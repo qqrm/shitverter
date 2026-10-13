@@ -17,13 +17,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
           toolchain: stable
           components: rustfmt, clippy
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@dfae9bf3d6f6c6f20ef4ebb3486c01a51341ff12 # v2.87.18
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-nextest
           fallback: none
@@ -35,7 +35,7 @@ jobs:
           cargo +stable clippy --all-targets -- -D warnings
 
       - name: Install dependency tooling
-        uses: taiki-e/install-action@dfae9bf3d6f6c6f20ef4ebb3486c01a51341ff12 # v2.87.18
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: |
             cargo-audit@0.22.2
@@ -57,3 +57,14 @@ jobs:
           docker build --tag shitverter:ci .
           expected_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
           test "$(docker run --rm shitverter:ci --version)" = "converter-bot $expected_version"
+
+  ci-gate:
+    if: always()
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require conversion and dependency checks
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        run: test "$VERIFY_RESULT" = success

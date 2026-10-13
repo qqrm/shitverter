@@ -2,3 +2,5 @@
 .env
 .vscode
 /deploy/shitverter.env
+
+__pycache__/

@@ -15,8 +15,12 @@ fn build_output_path(file_path: &str) -> String {
 
 /// Конвертирует любой поддерживаемый FFmpeg видеофайл в формат `.mp4`.
 pub fn convert_video_to_mp4(file_path: &str) -> AnyResult<String> {
+    convert_with_command(file_path, &mut Command::new("ffmpeg"))
+}
+
+fn convert_with_command(file_path: &str, command: &mut Command) -> AnyResult<String> {
     let output_path = build_output_path(file_path);
-    let output = Command::new("ffmpeg")
+    let output = command
         .args([
             "-hide_banner",
             "-nostdin",
@@ -68,6 +72,28 @@ pub fn convert_video_to_mp4(file_path: &str) -> AnyResult<String> {
 #[cfg(test)]
 mod tests {
     use super::build_output_path;
+
+    #[test]
+    #[cfg(unix)]
+    fn failed_converter_partial_output_is_removed_with_workspace() {
+        let workspace = crate::media_workspace::MediaWorkspace::new().unwrap();
+        let directory = workspace.path().to_path_buf();
+        let input = directory.join("input.mkv");
+        std::fs::write(&input, b"input").unwrap();
+        // This deterministic stand-in writes the final command argument just as
+        // FFmpeg can before failing; it does not need media or network access.
+        let mut command = std::process::Command::new("sh");
+        command.args([
+            "-c",
+            "for output do :; done; printf partial > \"$output\"; exit 7",
+            "fake-ffmpeg",
+        ]);
+        let result = super::convert_with_command(input.to_str().unwrap(), &mut command);
+        assert!(result.unwrap_err().to_string().contains("status: 7"));
+        assert!(directory.join("input.mkv.converted.mp4").exists());
+        drop(workspace);
+        assert!(!directory.exists());
+    }
 
     #[test]
     fn keeps_output_distinct_from_input_with_existing_extension() {
