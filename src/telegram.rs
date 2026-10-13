@@ -1,15 +1,7 @@
 use anyhow::{anyhow, Context, Result as AnyResult};
-use std::{
-    error::Error,
-    fmt,
-    path::{Path, PathBuf},
-    process,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{error::Error, fmt, path::Path};
 use teloxide::{prelude::*, ApiError, RequestError};
 use tokio::{fs, io::AsyncWriteExt};
-
-static DOWNLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 pub struct FileTooLargeError {
@@ -55,18 +47,13 @@ fn extract_extension(file_path: &str) -> &str {
     }
 }
 
-fn download_path(extension: &str) -> PathBuf {
-    let sequence = DOWNLOAD_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "shitverter-{}-{}.{}",
-        process::id(),
-        sequence,
-        extension
-    ))
-}
-
 /// Скачивает файл с серверов Telegram по его идентификатору.
-pub async fn download_file(bot: &Bot, file_id: &str, max_bytes: u64) -> AnyResult<String> {
+pub async fn download_file(
+    bot: &Bot,
+    file_id: &str,
+    max_bytes: u64,
+    directory: &Path,
+) -> AnyResult<String> {
     let file = bot
         .get_file(file_id.to_owned().into())
         .send()
@@ -92,7 +79,7 @@ pub async fn download_file(bot: &Bot, file_id: &str, max_bytes: u64) -> AnyResul
         file.path
     );
     let extension = extract_extension(&file.path);
-    let file_path = download_path(extension);
+    let file_path = directory.join(format!("input.{extension}"));
     let mut destination = fs::OpenOptions::new()
         .write(true)
         .create_new(true)

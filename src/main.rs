@@ -12,6 +12,7 @@ use tokio::{
 mod converter;
 mod handlers;
 mod limits;
+mod media_workspace;
 mod serverless;
 mod telegram;
 

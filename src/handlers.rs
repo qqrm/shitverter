@@ -11,6 +11,7 @@ use tokio::{
 
 use crate::converter::convert_video_to_mp4;
 use crate::limits::{utc_day_index, QuotaDecision, RateLimiter};
+use crate::media_workspace::MediaWorkspace;
 use crate::telegram::{download_file, FileTooLargeError};
 
 const VIDEO_FILE_EXTENSIONS: &[&str] = &[
@@ -210,7 +211,8 @@ pub async fn process_video(
         .context("Conversion queue is unavailable")?;
 
     // Скачиваем файл.
-    let file_path = match download_file(bot, &file_id, max_input_bytes).await {
+    let workspace = MediaWorkspace::new()?;
+    let file_path = match download_file(bot, &file_id, max_input_bytes, workspace.path()).await {
         Ok(file_path) => file_path,
         Err(error) => {
             let Some(file_too_large) = error.downcast_ref::<FileTooLargeError>() else {
@@ -235,18 +237,20 @@ pub async fn process_video(
         }
     };
 
-    let mut converted_file_path: Option<String> = None;
-
     let processing_result: AnyResult<ProcessOutcome> = async {
         // Клонируем file_path для передачи в замыкание, чтобы оригинал оставался доступен
         let file_path_clone = file_path.clone();
+        // spawn_blocking can outlive cancellation of the async handler.
+        let worker_workspace = workspace.clone();
 
         // Конвертация файла выполняется в отдельном блокирующем потоке.
-        let join_result = task::spawn_blocking(move || convert_video_to_mp4(&file_path_clone))
+        let join_result = task::spawn_blocking(move || {
+            let _workspace = worker_workspace;
+            convert_video_to_mp4(&file_path_clone)
+        })
             .await
             .context("Failed to join blocking task")?;
         let converted_path = join_result.context("FFmpeg conversion failed")?;
-        converted_file_path = Some(converted_path.clone());
 
         if fs::metadata(&converted_path).await?.len() > max_output_bytes {
             bot.send_message(
@@ -294,15 +298,6 @@ pub async fn process_video(
         Ok(ProcessOutcome::Converted)
     }
     .await;
-
-    if let Err(e) = fs::remove_file(&file_path).await {
-        log::error!("Failed to delete a temporary input file: {e}");
-    }
-    if let Some(converted_path) = converted_file_path {
-        if let Err(e) = fs::remove_file(&converted_path).await {
-            log::error!("Failed to delete a temporary output file: {e}");
-        }
-    }
 
     processing_result
 }
