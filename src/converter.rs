@@ -99,7 +99,9 @@ mod tests {
     fn keeps_output_distinct_from_input_with_existing_extension() {
         assert_eq!(
             build_output_path("/tmp/example.mkv"),
-            "/tmp/example.mkv.converted.mp4"
+            std::path::Path::new("/tmp")
+                .join("example.mkv.converted.mp4")
+                .to_string_lossy()
         );
     }
 
@@ -107,7 +109,9 @@ mod tests {
     fn keeps_output_distinct_from_mp4_input() {
         assert_eq!(
             build_output_path("/tmp/example.mp4"),
-            "/tmp/example.mp4.converted.mp4"
+            std::path::Path::new("/tmp")
+                .join("example.mp4.converted.mp4")
+                .to_string_lossy()
         );
     }
 
@@ -115,7 +119,9 @@ mod tests {
     fn appends_converted_mp4_when_extension_absent() {
         assert_eq!(
             build_output_path("/tmp/example"),
-            "/tmp/example.converted.mp4"
+            std::path::Path::new("/tmp")
+                .join("example.converted.mp4")
+                .to_string_lossy()
         );
     }
 }
