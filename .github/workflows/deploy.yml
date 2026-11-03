@@ -89,6 +89,8 @@ jobs:
         run: |
           set -euo pipefail
           ssh -F "$RUNNER_TEMP/ssh/config" production 'mkdir -p "$HOME/shitverter"'
-          scp -F "$RUNNER_TEMP/ssh/config" deploy/compose.yml deploy/deploy.sh production:shitverter/
+          scp -F "$RUNNER_TEMP/ssh/config" deploy/compose.yml deploy/compose.local-api.yml \
+            deploy/compose.telegram-api.yml deploy/telegram-bot-api.Dockerfile deploy/.dockerignore \
+            deploy/deploy.sh production:shitverter/
           ssh -F "$RUNNER_TEMP/ssh/config" production 'chmod 700 "$HOME/shitverter/deploy.sh"'
           ssh -F "$RUNNER_TEMP/ssh/config" production "\"\$HOME/shitverter/deploy.sh\" '$IMAGE_REFERENCE'"

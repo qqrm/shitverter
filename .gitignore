@@ -2,5 +2,7 @@
 .env
 .vscode
 /deploy/shitverter.env
+/deploy/telegram-api.env
+/deploy/local-api.enabled
 
 __pycache__/

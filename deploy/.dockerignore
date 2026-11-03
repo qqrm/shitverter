@@ -1,0 +1,3 @@
+# This image builds official remote source; no VM files belong in its context.
+*
+!telegram-bot-api.Dockerfile

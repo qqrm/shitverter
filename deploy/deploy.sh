@@ -23,10 +23,32 @@ if [[ ! -f "$compose_file" || ! -f "$env_file" ]]; then
   exit 66
 fi
 
+compose_args=(--project-name shitverter -f "$compose_file")
+local_api_enabled=false
+if [[ -f "$deployment_dir/local-api.enabled" ]]; then
+  local_api_enabled=true
+  if [[ ! -f "$deployment_dir/compose.local-api.yml" ]]; then
+    echo "local-api.enabled requires compose.local-api.yml" >&2
+    exit 66
+  fi
+  compose_args+=(-f "$deployment_dir/compose.local-api.yml")
+  if [[ "$(docker inspect --format '{{.State.Running}}' shitverter-telegram-api 2>/dev/null || true)" != "true" ]]; then
+    echo "start the local Bot API server before deploying in local mode" >&2
+    exit 69
+  fi
+fi
+# Validate configuration before stopping the currently running bot.
+SHITVERTER_IMAGE="$image_reference" docker compose "${compose_args[@]}" config --quiet
+
 previous_image="$(docker inspect --format '{{.Config.Image}}' "$container_name" 2>/dev/null || true)"
 readonly previous_image
 legacy_was_running="$(docker inspect --format '{{.State.Running}}' "$legacy_container_name" 2>/dev/null || true)"
 readonly legacy_was_running
+
+if [[ "$local_api_enabled" == "true" && "$legacy_was_running" == "true" ]]; then
+  echo "stop the legacy poller and complete the documented logOut migration first" >&2
+  exit 69
+fi
 
 rollback() {
   if [[ "$legacy_was_running" == "true" ]]; then
@@ -34,9 +56,7 @@ rollback() {
     docker start "$legacy_container_name"
   elif [[ -n "$previous_image" ]]; then
     echo "rolling back to $previous_image" >&2
-    SHITVERTER_IMAGE="$previous_image" docker compose \
-      --project-name shitverter \
-      -f "$compose_file" \
+    SHITVERTER_IMAGE="$previous_image" docker compose "${compose_args[@]}" \
       up --detach --force-recreate --remove-orphans
   else
     echo "no previous running deployment is available for rollback" >&2
@@ -49,9 +69,7 @@ if [[ "$legacy_was_running" == "true" ]]; then
   docker stop "$legacy_container_name"
 fi
 
-if ! SHITVERTER_IMAGE="$image_reference" docker compose \
-  --project-name shitverter \
-  -f "$compose_file" \
+if ! SHITVERTER_IMAGE="$image_reference" docker compose "${compose_args[@]}" \
   up --detach --force-recreate --remove-orphans; then
   rollback
   exit 1

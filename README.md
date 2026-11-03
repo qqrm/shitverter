@@ -61,6 +61,13 @@ docker build --build-arg MUSLRUST_TAG=1.93.1-stable-2026-02-23 -t shitverter:lat
 Set the following environment variables:
 
 * `TELOXIDE_TOKEN`: Your Telegram Bot Token.
+* `TELOXIDE_API_URL` (default: `https://api.telegram.org`) — Bot API base URL.
+* `TELEGRAM_LOCAL_FILES_DIR` (optional) — shared absolute cache directory for a
+  local Bot API server started with `--local`. Requires a non-cloud
+  `TELOXIDE_API_URL`; the directory must exist and be readable by the bot.
+* `TELEGRAM_REQUEST_TIMEOUT_SECONDS` (default: `300`) — HTTP request timeout.
+  Local `getFile` downloads the media before responding, so allow enough time
+  for the largest accepted input and output uploads.
 * `ALLOWED_TELEGRAM_USER_ID`: required in `--drain-queue` mode; only updates
   whose sender has this numeric Telegram user ID may reach the download and
   conversion path. All other updates are acknowledged and silently discarded.
@@ -70,6 +77,46 @@ Set the following environment variables:
 * `MAX_INPUT_BYTES` (default: `104857600`, 100 MiB) — maximum downloaded source-video size.
 * `MAX_OUTPUT_BYTES` (default: `49000000`) — maximum converted-video size before upload.
 * `MAX_CONCURRENT_CONVERSIONS` (default: `1`) — simultaneous download-and-FFmpeg jobs.
+
+## Files larger than 20 MB
+
+Telegram can accept a video in a chat while its cloud Bot API refuses to let a
+bot download it: cloud `getFile` is limited to **20 MB**. Raising
+`MAX_INPUT_BYTES` alone cannot change that transport limit.
+
+Run the official [Telegram Bot API server](https://github.com/tdlib/telegram-bot-api)
+with `--local`, then configure Shitverter to use it:
+
+```dotenv
+TELOXIDE_API_URL=http://telegram-bot-api:8081
+TELEGRAM_LOCAL_FILES_DIR=/var/lib/telegram-bot-api
+TELEGRAM_REQUEST_TIMEOUT_SECONDS=300
+MAX_INPUT_BYTES=104857600
+MAX_OUTPUT_BYTES=49000000
+```
+
+Mount the Bot API data directory at the **same absolute path** in both containers;
+the bot only needs read access. Local `getFile` returns an absolute path, and
+Shitverter streams a bounded copy into its private conversion workspace. It
+rejects paths outside the configured directory (including symlink escapes),
+keeps the API server's original cached file, and removes temporary copies after
+processing. The API endpoint alone does not provide an HTTP file server.
+
+The local API removes the cloud download limit and supports uploads up to
+**2000 MB**, but the bot's own resource limits remain independent: the defaults
+still accept at most **100 MiB** input and **49,000,000 bytes** output. Increase
+both limits deliberately when needed, and provision storage for the API cache,
+the input copy, and the converted output. The advertised input size is checked
+before `getFile`; returned metadata and the actual bytes copied are checked too.
+
+The server requires your Telegram `api_id` and `api_hash`. To migrate an existing
+bot, stop its old update consumer and call the cloud API's `logOut` before
+starting it against the local endpoint. Telegram prevents returning to the cloud
+API for 10 minutes after `logOut`. Both long-running and `--drain-queue` modes use
+the same configuration; an ephemeral worker still needs access to the shared
+directory. See [deployment instructions](deploy/README.md) for the container
+setup and [Telegram's local API documentation](https://core.telegram.org/bots/api#using-a-local-bot-api-server)
+for the transport limits and migration requirements.
 
 ## One-shot queue mode
 

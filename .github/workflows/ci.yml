@@ -58,13 +58,40 @@ jobs:
           expected_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
           test "$(docker run --rm shitverter:ci --version)" = "converter-bot $expected_version"
 
+  local-api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate deployment configurations
+        env:
+          SHITVERTER_IMAGE: ghcr.io/qqrm/shitverter@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        run: |
+          bash -n deploy/deploy.sh
+          printf 'TELOXIDE_TOKEN=unused\n' > deploy/shitverter.env
+          printf 'TELEGRAM_API_ID=1\nTELEGRAM_API_HASH=unused\n' > deploy/telegram-api.env
+          docker compose -f deploy/compose.yml config --quiet
+          docker compose -f deploy/compose.yml -f deploy/compose.local-api.yml config --quiet
+          docker compose -f deploy/compose.telegram-api.yml config --quiet
+
+      - name: Build official local Bot API server
+        run: |
+          docker build --file deploy/telegram-bot-api.Dockerfile --tag shitverter-telegram-api:ci deploy
+          docker run --rm shitverter-telegram-api:ci --version
+
   ci-gate:
     if: always()
-    needs: [verify]
+    needs: [verify, local-api]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require conversion and dependency checks
         env:
           VERIFY_RESULT: ${{ needs.verify.result }}
-        run: test "$VERIFY_RESULT" = success
+          LOCAL_API_RESULT: ${{ needs.local-api.result }}
+        run: |
+          test "$VERIFY_RESULT" = success
+          test "$LOCAL_API_RESULT" = success

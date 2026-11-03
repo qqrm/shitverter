@@ -1,0 +1,39 @@
+# Independent project: bot deployments must not recreate the API server/session.
+name: shitverter-telegram
+
+services:
+  telegram-bot-api:
+    build:
+      context: .
+      dockerfile: telegram-bot-api.Dockerfile
+    image: shitverter-telegram-api:10.3
+    container_name: shitverter-telegram-api
+    env_file:
+      - ./telegram-api.env
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    volumes:
+      - telegram-data:/var/lib/telegram-bot-api
+      # Initialize the disk-backed work volume with the same unprivileged owner.
+      - conversion-work:/var/lib/shitverter-work
+    networks:
+      - telegram
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    stop_grace_period: 60s
+
+networks:
+  telegram:
+    name: shitverter-telegram
+
+volumes:
+  telegram-data:
+    name: shitverter-telegram-data
+  conversion-work:
+    name: shitverter-conversion-work
