@@ -2,6 +2,19 @@
 services:
   bot:
     user: "1000:1000"
+    # This work volume belongs to one bot container. Clean interrupted jobs
+    # after Docker has stopped the previous container, before any new work.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        for workspace in "$$TMPDIR"/shitverter-*; do
+          if [ -d "$$workspace" ] && [ ! -L "$$workspace" ] && [ -O "$$workspace" ]; then
+            rm -rf -- "$$workspace"
+          fi
+        done
+        exec /usr/local/bin/converter-bot "$$@"
+      - converter-bot
     environment:
       TELOXIDE_API_URL: http://telegram-bot-api:8081
       TELEGRAM_LOCAL_FILES_DIR: /var/lib/telegram-bot-api

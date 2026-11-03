@@ -94,6 +94,12 @@ The bot mounts the API data volume read-only at the same absolute path and
 copies inputs to its own disk-backed work directory. Both volumes are initialized
 by the API image with owner 1000:1000. `TMPDIR` keeps large conversions off the
 default 1 GiB RAM-backed `/tmp` mount.
+The work volume belongs to exactly one bot container; do not share it with
+parallel bot instances or queue workers. Before starting the bot, its local-mode
+entrypoint removes its own immediate `shitverter-*` working directories left by
+interrupted jobs. Other names, files, and symlinks are preserved. This covers
+container restarts after a crash, when normal temporary-directory cleanup cannot
+run, and does not touch the separate API cache/session volume.
 
 ### One-time setup and migration
 
@@ -132,10 +138,13 @@ default 1 GiB RAM-backed `/tmp` mount.
 
    The code's defaults remain 100 MiB input and 49,000,000 bytes output. Merely
    switching APIs does not raise them. Allow disk space for the API's cached
-   source, the bot's working copy, and the converted output; with these example
-   limits that is about 1.5 GiB per active conversion, plus retained API data.
-   The bot cleans its own job directories; it does not delete API session/cache
-   files. Monitor free space in both named volumes.
+   source, the bot's working copy, and the converted output. Two 500 MiB copies
+   plus a 500 MiB result require about 1.5 GiB, plus retained API data. This is
+   not an upper bound: `MAX_OUTPUT_BYTES` is checked after FFmpeg finishes, so
+   the intermediate output can grow beyond that limit. Allow additional free
+   disk space for transcoding. The bot cleans its own job directories and stale
+   directories on startup; it does not delete API session/cache files. Monitor
+   free space in both named volumes.
 5. Stop the existing bot and any other polling/webhook consumer of the same
    token. Then call cloud `logOut` once, as required by
    [Telegram's migration procedure](https://core.telegram.org/bots/api#logout).
