@@ -12,7 +12,7 @@ use tokio::{
 use crate::converter::convert_video_to_mp4;
 use crate::limits::{utc_day_index, QuotaDecision, RateLimiter};
 use crate::media_workspace::MediaWorkspace;
-use crate::telegram::{download_file, FileTooLargeError};
+use crate::telegram::{download_file, DownloadConfig, FileTooLargeError};
 
 const VIDEO_FILE_EXTENSIONS: &[&str] = &[
     "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "webm", "wmv",
@@ -93,7 +93,7 @@ fn file_too_large_message(error: &FileTooLargeError) -> String {
             "Файл слишком большой. Максимальный размер для обработки — {} МиБ.",
             limit_bytes / (1024 * 1024),
         ),
-        None => "Файл слишком большой: Telegram не позволяет боту его скачать. Пришли файл меньшего размера."
+        None => "Файл сохранён в Telegram, но текущий Bot API отклонил скачивание. У облачного API лимит 20 МБ. Для больших файлов администратору нужно подключить локальный Bot API."
             .to_string(),
     }
 }
@@ -105,6 +105,7 @@ pub async fn process_video(
     conversion_slots: &Semaphore,
     max_input_bytes: u64,
     max_output_bytes: u64,
+    downloads: &DownloadConfig,
 ) -> AnyResult<ProcessOutcome> {
     let user_id = quota_subject_key(msg);
     log::info!("Received a Telegram message");
@@ -113,10 +114,13 @@ pub async fn process_video(
         return Ok(ProcessOutcome::Ignored);
     };
 
-    let file_id = match &common.media_kind {
+    let (file_id, declared_size) = match &common.media_kind {
         MediaKind::Video(video) => {
             log::info!("Accepted a video message for validation");
-            video.video.file.id.to_string()
+            (
+                video.video.file.id.to_string(),
+                u64::from(video.video.file.size),
+            )
         }
         MediaKind::Document(document) => {
             let mime_type = document
@@ -132,7 +136,10 @@ pub async fn process_video(
 
             log::info!("Accepted a video document for validation");
 
-            document.document.file.id.to_string()
+            (
+                document.document.file.id.to_string(),
+                u64::from(document.document.file.size),
+            )
         }
         _ => return Ok(ProcessOutcome::Ignored),
     };
@@ -212,7 +219,16 @@ pub async fn process_video(
 
     // Скачиваем файл.
     let workspace = MediaWorkspace::new()?;
-    let file_path = match download_file(bot, &file_id, max_input_bytes, workspace.path()).await {
+    let file_path = match download_file(
+        bot,
+        &file_id,
+        declared_size,
+        max_input_bytes,
+        workspace.path(),
+        downloads,
+    )
+    .await
+    {
         Ok(file_path) => file_path,
         Err(error) => {
             let Some(file_too_large) = error.downcast_ref::<FileTooLargeError>() else {
@@ -361,7 +377,7 @@ mod tests {
     fn explains_telegram_download_limit() {
         assert_eq!(
             file_too_large_message(&FileTooLargeError { limit_bytes: None }),
-            "Файл слишком большой: Telegram не позволяет боту его скачать. Пришли файл меньшего размера.",
+            "Файл сохранён в Telegram, но текущий Bot API отклонил скачивание. У облачного API лимит 20 МБ. Для больших файлов администратору нужно подключить локальный Bot API.",
         );
     }
 }

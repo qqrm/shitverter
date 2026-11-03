@@ -114,7 +114,7 @@ async fn main() -> AnyResult<()> {
     )
     .max(1) as usize;
 
-    let bot = Bot::from_env();
+    let (bot, downloads) = telegram::configured_bot().await?;
 
     ensure_bot_credentials(&bot).await?;
 
@@ -135,6 +135,7 @@ async fn main() -> AnyResult<()> {
             max_conversions_per_run,
             max_updates_per_run,
             allowed_user_id,
+            &downloads,
         )
         .await;
     }
@@ -167,6 +168,7 @@ async fn main() -> AnyResult<()> {
     teloxide::repl(bot, move |bot: Bot, msg: Message| {
         let limiter = Arc::clone(&limiter);
         let conversion_slots = Arc::clone(&conversion_slots);
+        let downloads = downloads.clone();
         async move {
             if process_video(
                 &bot,
@@ -175,6 +177,7 @@ async fn main() -> AnyResult<()> {
                 &conversion_slots,
                 max_input_bytes,
                 max_output_bytes,
+                &downloads,
             )
             .await
             .is_err()

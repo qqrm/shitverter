@@ -5,6 +5,7 @@ use tokio::sync::{Mutex, Semaphore};
 
 use crate::handlers::{process_video, ProcessOutcome};
 use crate::limits::RateLimiter;
+use crate::telegram::DownloadConfig;
 
 pub async fn drain(
     bot: &Bot,
@@ -13,6 +14,7 @@ pub async fn drain(
     max_media_jobs: u32,
     max_updates: u32,
     allowed_user_id: u64,
+    downloads: &DownloadConfig,
 ) -> Result<()> {
     let limiter = Mutex::new(RateLimiter::new(u32::MAX, u32::MAX));
     let conversion_slot = Semaphore::new(1);
@@ -36,6 +38,7 @@ pub async fn drain(
                     &conversion_slot,
                     max_input_bytes,
                     max_output_bytes,
+                    downloads,
                 )
                 .await
                 {

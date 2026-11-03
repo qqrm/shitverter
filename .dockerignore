@@ -8,6 +8,8 @@ target/
 
 # Local config/secrets
 .env
+deploy/*.env
+deploy/local-api.enabled
 
 # Misc
 *.log

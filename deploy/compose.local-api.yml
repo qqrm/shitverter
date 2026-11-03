@@ -1,0 +1,26 @@
+# Applied by deploy.sh only when local-api.enabled exists beside it.
+services:
+  bot:
+    user: "1000:1000"
+    environment:
+      TELOXIDE_API_URL: http://telegram-bot-api:8081
+      TELEGRAM_LOCAL_FILES_DIR: /var/lib/telegram-bot-api
+      TMPDIR: /var/lib/shitverter-work
+    volumes:
+      - telegram-data:/var/lib/telegram-bot-api:ro
+      - conversion-work:/var/lib/shitverter-work
+    networks:
+      - telegram
+
+networks:
+  telegram:
+    external: true
+    name: shitverter-telegram
+
+volumes:
+  telegram-data:
+    external: true
+    name: shitverter-telegram-data
+  conversion-work:
+    external: true
+    name: shitverter-conversion-work
