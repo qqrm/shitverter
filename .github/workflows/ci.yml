@@ -60,7 +60,8 @@ jobs:
 
   local-api:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Cold TDLib compilation can exceed 30 minutes on hosted runners.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -76,6 +77,9 @@ jobs:
           docker compose -f deploy/compose.yml config --quiet
           docker compose -f deploy/compose.yml -f deploy/compose.local-api.yml config --quiet
           docker compose -f deploy/compose.telegram-api.yml config --quiet
+
+      - name: Test local API activation and recovery
+        run: python3 -m unittest discover -s deploy -p 'test_*.py' -v
 
       - name: Build official local Bot API server
         run: |

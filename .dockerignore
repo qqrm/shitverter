@@ -8,8 +8,9 @@ target/
 
 # Local config/secrets
 .env
-deploy/*.env
+deploy/*.env*
 deploy/local-api.enabled
+deploy/local-api.migration.json
 
 # Misc
 *.log

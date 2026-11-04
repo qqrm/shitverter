@@ -84,15 +84,21 @@ Telegram can accept a video in a chat while its cloud Bot API refuses to let a
 bot download it: cloud `getFile` is limited to **20 MB**. Raising
 `MAX_INPUT_BYTES` alone cannot change that transport limit.
 
+For the Docker deployment, add `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` to the
+GitHub `production` environment secrets and run **Deploy** with
+`enable_local_api=true`. It builds and starts the official API container,
+performs the session migration, and configures inputs up to **2 GiB** and outputs
+up to **2000 MB**. See [activation and recovery](deploy/README.md#enable-large-files-from-github-actions).
+
 Run the official [Telegram Bot API server](https://github.com/tdlib/telegram-bot-api)
 with `--local`, then configure Shitverter to use it:
 
 ```dotenv
 TELOXIDE_API_URL=http://telegram-bot-api:8081
 TELEGRAM_LOCAL_FILES_DIR=/var/lib/telegram-bot-api
-TELEGRAM_REQUEST_TIMEOUT_SECONDS=300
-MAX_INPUT_BYTES=104857600
-MAX_OUTPUT_BYTES=49000000
+TELEGRAM_REQUEST_TIMEOUT_SECONDS=1800
+MAX_INPUT_BYTES=2147483648
+MAX_OUTPUT_BYTES=2000000000
 ```
 
 Mount the Bot API data directory at the **same absolute path** in both containers;
