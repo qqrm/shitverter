@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Superseded pull request revisions only wait in the queue for nothing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -15,6 +20,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
@@ -52,20 +60,27 @@ jobs:
       - name: Check unused dependencies
         run: cargo machete
 
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
       - name: Build production image
         run: |
-          docker build --tag shitverter:ci .
+          docker buildx build --load --tag shitverter:ci \
+            --cache-from type=gha,scope=shitverter \
+            --cache-to type=gha,scope=shitverter,mode=max .
           expected_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
           test "$(docker run --rm shitverter:ci --version)" = "converter-bot $expected_version"
 
   local-api:
     runs-on: ubuntu-24.04
-    # Cold TDLib compilation can exceed 30 minutes on hosted runners.
+    # Cold TDLib compilation needs ~26 minutes; warmed cache layers are reused
+    # from the workflow cache, so keep the cold-path ceiling generous.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Validate deployment configurations
         env:
@@ -83,7 +98,12 @@ jobs:
 
       - name: Build official local Bot API server
         run: |
-          docker build --file deploy/telegram-bot-api.Dockerfile --tag shitverter-telegram-api:ci deploy
+          docker buildx build --load \
+            --file deploy/telegram-bot-api.Dockerfile \
+            --tag shitverter-telegram-api:ci \
+            --cache-from type=gha,scope=telegram-bot-api \
+            --cache-to type=gha,scope=telegram-bot-api,mode=max \
+            deploy
           docker run --rm shitverter-telegram-api:ci --version
 
   ci-gate:

@@ -118,11 +118,13 @@ Deploy already works. Obtain your own application `api_id` and `api_hash` from
    completed; test download, FFmpeg conversion, and return upload together.
 
 The workflow validates the new secrets before touching the VM. It builds the
-official API image on a GitHub runner, publishes it under
-`ghcr.io/OWNER/shitverter:telegram-api-sha-COMMIT`, and deploys by immutable digest.
-Using the existing GHCR package preserves the VM's existing pull access; the VM
-does not compile C++. The first API build may take around 25 minutes. The bot
-keeps running during that build.
+official API image on a GitHub runner during the unapproved build job, publishes
+it under `ghcr.io/OWNER/shitverter:telegram-api-sha-COMMIT`, and deploys by
+immutable digest. Using the existing GHCR package preserves the VM's existing
+pull access; the VM does not compile C++. A cold API build takes around 25
+minutes, but its layers are kept in the GitHub Actions build cache, so repeat
+builds take minutes and the approved production step never waits for C++. The bot
+keeps running during both builds.
 
 The activation helper writes `telegram-api.env` and `telegram-api-image.env` with
 mode 600. Before stopping the cloud poller it pulls and validates both images,
