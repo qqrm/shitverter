@@ -43,7 +43,7 @@ deployment account's `~/.ssh/authorized_keys`; do not reuse a personal key.
 
 ## GitHub environment
 
-Keep the `production` environment in `qqrm-labs/shitverter`, require an approval
+Keep the repository's `production` environment, require an approval
 reviewer, and add these environment secrets:
 
 | Secret | Value |
@@ -59,9 +59,10 @@ the displayed fingerprint via the VM provider or console; the workflow itself
 never accepts a new host key.
 
 The deploy identity needs Docker access and write access to `~/shitverter`, but
-does not need sudo. The workflow copies the deployment script, Compose files,
-and local API Dockerfile. It never writes `shitverter.env`, `telegram-api.env`,
-or the operator-controlled `local-api.enabled` marker.
+does not need sudo. Normal deployments copy the deployment scripts, Compose files,
+and local API Dockerfile while preserving the VM's environment files and mode.
+The explicit `enable_local_api` option performs the one-time configuration below.
+That option also requires Python 3 on the VM; Ubuntu includes it by default.
 
 ## First deployment and rollback
 
@@ -101,7 +102,67 @@ interrupted jobs. Other names, files, and symlinks are preserved. This covers
 container restarts after a crash, when normal temporary-directory cleanup cannot
 run, and does not touch the separate API cache/session volume.
 
-### One-time setup and migration
+### Enable large files from GitHub Actions
+
+No additional SSH credentials or manual Docker commands are needed when ordinary
+Deploy already works. Obtain your own application `api_id` and `api_hash` from
+[my.telegram.org](https://core.telegram.org/api/obtaining_api_id), then:
+
+1. Add `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` as secrets in the `production`
+   environment. The existing bot token stays on the VM in `shitverter.env`.
+2. Run **Deploy** from `main`: leave `publish_only` unchecked and check
+   **Enable files up to 2 GiB** (`enable_local_api`). Approve `production` when
+   GitHub asks, as for an ordinary deployment.
+3. After success, send a video above 20 MB and then a representative large video.
+   A successful startup does not establish that an actual 2 GiB conversion has
+   completed; test download, FFmpeg conversion, and return upload together.
+
+The workflow validates the new secrets before touching the VM. It builds the
+official API image on a GitHub runner, publishes it under
+`ghcr.io/OWNER/shitverter:telegram-api-sha-COMMIT`, and deploys by immutable digest.
+Using the existing GHCR package preserves the VM's existing pull access; the VM
+does not compile C++. The first API build may take around 25 minutes. The bot
+keeps running during that build.
+
+The activation helper writes `telegram-api.env` and `telegram-api-image.env` with
+mode 600. Before stopping the cloud poller it pulls and validates both images,
+starts the isolated API container, checks its listener without logging the bot
+into it, and requires at least 10 GiB of available space on both mounted volumes.
+It first installs the selected bot image in cloud mode to establish a compatible
+rollback version, then switches APIs using Telegram's required cloud `logOut`.
+The helper checks local `getMe` before starting the bot in local mode and verifies
+the resulting container's configuration.
+
+Activation backs up `shitverter.env` and sets these values:
+
+| Setting | Value |
+| --- | --- |
+| `MAX_INPUT_BYTES` | `2147483648` (2 GiB, inclusive) |
+| `MAX_OUTPUT_BYTES` | `2000000000` (within Telegram's documented 2000 MB upload limit) |
+| `TELEGRAM_REQUEST_TIMEOUT_SECONDS` | `1800` (30 minutes) |
+| `MAX_CONCURRENT_CONVERSIONS` | `1` |
+
+These are deployment settings; the application's cloud-mode defaults stay
+unchanged. Ten GiB is a preflight floor, not a bound on disk usage: the API cache,
+the bot's input copy, and FFmpeg output coexist, and output size is checked only
+after conversion. Monitor free space and retained API data.
+
+The helper records `local-api.migration.json`, bound to the bot's identity, before
+stopping it and again before attempting cloud `logOut`.
+If the response is lost or a later step fails, rerun **Deploy** with
+`enable_local_api` checked. It resumes local activation instead of restarting a
+cloud poller that Telegram may already have logged out. An unconfirmed logout
+must receive a positive acknowledgement on retry; if Telegram applies its
+10-minute cloud-login cooldown, wait for that window and retry. The helper never
+treats a network failure or rate limit as proof of a successful logout. An ordinary deployment
+refuses to start cloud mode while this checkpoint exists without a local marker.
+After activation, leave the option unchecked for routine bot deployments; they
+preserve local mode and do not rebuild or replace a running API container. If the
+API container is stopped, `deploy.sh` restores it from its saved digest.
+
+### Manual setup and migration
+
+The steps below are an alternative for operators using the VM console directly.
 
 1. Deploy the new Shitverter image in the existing cloud mode first and verify
    a small video. Keep its immutable image reference for the activation command
@@ -126,20 +187,20 @@ run, and does not touch the separate API cache/session volume.
    docker compose -f compose.telegram-api.yml up --detach --build
    ```
 
-4. Set the intended processing limits in `shitverter.env`. For example, 500 MiB
-   inputs and outputs with one conversion at a time:
+4. Set the intended processing limits in `shitverter.env`. For example, inputs
+   up to 2 GiB and outputs up to 2000 MB with one conversion at a time:
 
    ```dotenv
-   MAX_INPUT_BYTES=524288000
-   MAX_OUTPUT_BYTES=524288000
+   MAX_INPUT_BYTES=2147483648
+   MAX_OUTPUT_BYTES=2000000000
    MAX_CONCURRENT_CONVERSIONS=1
-   TELEGRAM_REQUEST_TIMEOUT_SECONDS=300
+   TELEGRAM_REQUEST_TIMEOUT_SECONDS=1800
    ```
 
    The code's defaults remain 100 MiB input and 49,000,000 bytes output. Merely
    switching APIs does not raise them. Allow disk space for the API's cached
-   source, the bot's working copy, and the converted output. Two 500 MiB copies
-   plus a 500 MiB result require about 1.5 GiB, plus retained API data. This is
+   source, the bot's working copy, and the converted output. Two 2 GiB copies
+   plus a 2000 MB result require almost 6 GiB, plus retained API data. This is
    not an upper bound: `MAX_OUTPUT_BYTES` is checked after FFmpeg finishes, so
    the intermediate output can grow beyond that limit. Allow additional free
    disk space for transcoding. The bot cleans its own job directories and stale
@@ -196,7 +257,9 @@ do not run `docker compose down --volumes` as part of a bot update.
 
 Switching back to the cloud is a separate migration: stop the local bot, call
 `logOut` on the local API endpoint to deregister that session, then remove
-`local-api.enabled` and deploy in cloud mode. Telegram refuses cloud login for
+`local-api.enabled` and archive/remove `local-api.migration.json` if present
+before deploying in cloud mode. Removing these files without completing the
+session handoff is not a recovery procedure. Telegram refuses cloud login for
 10 minutes after the original cloud `logOut`. Follow the
 [official server migration instructions](https://github.com/tdlib/telegram-bot-api#moving-a-bot-from-one-local-server-to-another)
 and finish the session handoff before restarting the cloud poller. The `close`

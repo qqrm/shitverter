@@ -1,8 +1,8 @@
 /target
 .env
 .vscode
-/deploy/shitverter.env
-/deploy/telegram-api.env
+/deploy/*.env*
 /deploy/local-api.enabled
+/deploy/local-api.migration.json
 
 __pycache__/

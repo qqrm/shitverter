@@ -77,6 +77,9 @@ jobs:
           docker compose -f deploy/compose.yml -f deploy/compose.local-api.yml config --quiet
           docker compose -f deploy/compose.telegram-api.yml config --quiet
 
+      - name: Test local API activation and recovery
+        run: python3 -m unittest discover -s deploy -p 'test_*.py' -v
+
       - name: Build official local Bot API server
         run: |
           docker build --file deploy/telegram-bot-api.Dockerfile --tag shitverter-telegram-api:ci deploy

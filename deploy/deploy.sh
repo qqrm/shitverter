@@ -23,6 +23,11 @@ if [[ ! -f "$compose_file" || ! -f "$env_file" ]]; then
   exit 66
 fi
 
+if [[ -f "$deployment_dir/local-api.migration.json" && ! -f "$deployment_dir/local-api.enabled" ]]; then
+  echo "local API migration is unfinished; rerun Deploy with enable_local_api instead of starting a cloud poller" >&2
+  exit 69
+fi
+
 compose_args=(--project-name shitverter -f "$compose_file")
 local_api_enabled=false
 if [[ -f "$deployment_dir/local-api.enabled" ]]; then
@@ -33,8 +38,26 @@ if [[ -f "$deployment_dir/local-api.enabled" ]]; then
   fi
   compose_args+=(-f "$deployment_dir/compose.local-api.yml")
   if [[ "$(docker inspect --format '{{.State.Running}}' shitverter-telegram-api 2>/dev/null || true)" != "true" ]]; then
-    echo "start the local Bot API server before deploying in local mode" >&2
-    exit 69
+    api_image_file="$deployment_dir/telegram-api-image.env"
+    if [[ ! -f "$api_image_file" ]]; then
+      echo "start the local Bot API server or run Deploy with enable_local_api first" >&2
+      exit 69
+    fi
+    api_image="$(< "$api_image_file")"
+    api_image="${api_image#TELEGRAM_BOT_API_IMAGE=}"
+    if [[ ! "$api_image" =~ ^ghcr\.io/(qqrm|qqrm-labs)/shitverter@sha256:[a-f0-9]{64}$ ]]; then
+      echo "invalid local Bot API image reference" >&2
+      exit 64
+    fi
+    TELEGRAM_BOT_API_IMAGE="$api_image" docker compose --project-name shitverter-telegram \
+      -f "$deployment_dir/compose.telegram-api.yml" config --quiet
+    TELEGRAM_BOT_API_IMAGE="$api_image" docker compose --project-name shitverter-telegram \
+      -f "$deployment_dir/compose.telegram-api.yml" up --detach --no-build
+    python3 "$deployment_dir/enable-local-api.py" --check-api-ready
+    if [[ "$(docker inspect --format '{{.State.Running}}' shitverter-telegram-api 2>/dev/null || true)" != "true" ]]; then
+      echo "local Bot API server did not start" >&2
+      exit 69
+    fi
   fi
 fi
 # Validate configuration before stopping the currently running bot.

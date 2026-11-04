@@ -6,7 +6,8 @@ services:
     build:
       context: .
       dockerfile: telegram-bot-api.Dockerfile
-    image: shitverter-telegram-api:10.3
+    # Actions supplies an immutable digest; manual builds keep the local tag.
+    image: ${TELEGRAM_BOT_API_IMAGE:-shitverter-telegram-api:10.3}
     container_name: shitverter-telegram-api
     env_file:
       - ./telegram-api.env
