@@ -1,0 +1,4 @@
+# Public Telegram Bot API source commit ID, not a credential.
+e07fbc3b6814453998e94d2bdba98ab53bf6cf05:deploy/telegram-bot-api.Dockerfile:generic-api-key:7
+# Deliberate hexadecimal-alphabet literal in the local API test fixture.
+f01fbeba539ee657bde88136b9da586f0b2011f0:deploy/test_enable_local_api.py:generic-api-key:33
