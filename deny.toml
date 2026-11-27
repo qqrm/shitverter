@@ -5,7 +5,10 @@ unsound = "all"
 # proc-macro-error2 is transitive through teloxide -> aquamarine. No safe
 # replacement is available in the current Teloxide line; cargo audit still
 # reports the upstream warning on every CI run.
-ignore = ["RUSTSEC-2026-0173"]
+ignore = [
+    "RUSTSEC-2026-0173",
+    { id = "RUSTSEC-2026-0543", reason = "Unmaintained notice reviewed 2026-11-27: chrono 0.4.45 is required by teloxide-core 0.13.0 through teloxide 0.17.0; no released SDK upgrade removes it. Revisit by 2026-12-27. Independent cargo audit remains enabled." },
+]
 
 [bans]
 multiple-versions = "warn"
